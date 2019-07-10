@@ -1,1 +1,39 @@
-Hellow World
+debパッケージのubuntuへのインストール
+
+インストールは　$ sudo dpkg -i ○○ です。
+アンインストールは　$ sudo dpkg -r ○○ です。
+
+visual studio codeのインストール
+sudo apt install snapd
+sudo snap install --classic code
+
+gitの使い方
+git commit
+git push      githubへ
+
+
+
+google chromeのインストール
+$ wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+$ sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list'
+$ sudo apt update
+
+## インストール
+$ sudo apt install google-chrome-stable
+
+
+# avogadroのインストール
+
+gunzip qt-everywhere-opensource-src-%VERSION%.tar.gz
+tar xf qt-everywhere-opensource-src-%VERSION%.tar
+
+
+# pubchemからダウンロード
+https://pubchem.ncbi.nlm.nih.gov/pc_fetch/pc_fetch.cgi
+にアクセス
+
+一行ごとにpubchem cidを記録したリストを用意する。
+
+3D構造をダウンロードしたいので
+Retrieve 3D records/images?
+にチェックを入れる。
