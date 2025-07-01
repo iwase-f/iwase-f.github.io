@@ -1,0 +1,181 @@
+<!DOCTYPE html> <!-- ****** 必ず必要HTML5宣言 *****-->
+
+<html lang="ja">  <!-- ****** html の始まり *****-->
+
+<!-- ****** <head>と</head>の間に、文字コードの指定 <meta charset="UTF-8">と、
+Webページのタイトルの指定 <title>HTMLとは</title>を記述する ****** -->
+
+<head> <!-- ****** headの始まり *****-->
+	<meta charset="UTF-8"> 
+	<title>SeriesTriangleFunc グラフ化</title> 
+	<style type="text/css">
+	input{
+		font-size : 12pt;
+	}
+	</style>
+    <script type="text/x-mathjax-config">
+	MathJax.Hub.Config({
+  		tex2jax: {inlineMath: [['$','$']]}
+	});
+	</script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+<!-- ********************************************************************************** -->
+	<script src="./GraphTool.js"></script>   <!-- グラフ作成ツールの読み込み -->
+<!-- ********************************************************************************** -->
+	<script type="text/javascript">
+//********************************************************************
+	function Check( n ){
+		if ( isNaN(n) || n=="" ){
+			alert("実数値を入力して下さい");
+		}
+	}
+//********************************************************************
+	function CheckN( n ){
+			if (isNaN(n) || n%1 != 0 || n<=0 || n=="" || n>1000){
+				alert("nには，1〜1000の正の整数を入力して下さい");
+			}
+	} 
+//********************************************************************
+	function CheckXminXmax( Xmin, Xmax ){
+		if ( Xmin >= Xmax ){
+			alert("Xmin<Xmaxの値を入力して下さい");			
+		}
+	}
+//********************************************************************
+	function Disp( f , n){
+		f.value=n;
+	}	
+	function DispXY( f , arrX, arrY ){  //配列arrX,arrYを<textarea>に表示
+		var L=arrX.length;
+		var Str="Size = "+L+"\n";
+		for ( var i=0;  i<L ; i++){
+			Str=Str+"X["+i+"] = "+arrX[i]+"     Y["+i+"] = "+arrY[i]+"\n";
+		}
+		f.value=Str;							//表示部 f へ文字列を書き込む
+	}
+//********************************************************************	
+	function GetSelect1Value( f){
+		var fs = f.Select1;
+		var DeltaX;
+		for(var i = 0 ; i < fs.options.length ; i++){
+			if( fs.options[i].selected ){
+				DeltaX= fs.options[i].value ;
+			}
+		}
+		return DeltaX;
+	}
+//********************************************************************
+	function Ex4( f ){
+		var n = f.Input1.value;
+		var Xmin = eval( f.Input2.value);
+		var Xmax = eval( f.Input3.value);
+		var DeltaX=GetSelect1Value(f);
+		CheckN( n);
+		Check( Xmin);
+		Check( Xmax);
+		CheckXminXmax( Xmin, Xmax);
+		Disp( f.Disp1, n);
+		Disp( f.Disp2, Xmin);
+		Disp( f.Disp3, Xmax);
+		Disp( f.Disp4, DeltaX);
+	}
+//********************************************************************	
+	function Func1( x, n){
+		var Sum=0;
+		for( var k=1; k<=n ; k++){
+			y=2*k-1;
+			Sum=Sum+Math.sin(y*x)/y;
+		}
+		return Sum;
+	}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    function Graph( X, Y) {
+	var Size=X.length;
+	var Canvas = document.getElementById("canvas1");
+        VXmin = Math.min.apply(null, X); 		//仮想座標の左下のX座標
+        VXmax = Math.max.apply(null, X);		//仮想座標の左下のY座標
+        VYmin = 1.2*Math.min.apply(null, Y); 	//仮想座標の右上のX座標
+        VYmax = 1.2*Math.max.apply(null, Y);	//仮想座標の右上のY座標
+        // ＸＹ座標軸の設定
+		CanvasWidth = Canvas.width;  CanvasHeight = Canvas.height;
+		SetCanvas("canvas1", "gray");			//背景色指定
+		DrawLine(VXmin,0, VXmax,0, "blue", 2);	//x軸の色指定
+		DrawLine(0,VYmin, 0,VYmax, "blue", 2);	//y軸の色指定
+		x0 = X[0]; y0 = Y[0];					//折れ線の描画(1)
+        for (var j=1; j<Size; j++){
+		DrawPoint(X[j], Y[j], "yellow", 3)		//点のプロット
+			DrawLine(x0,y0, X[j], Y[j], "red", 1);		//折れ線の描画(2)
+			x0 = X[j]; y0 = Y[j]; 					//折れ線の描画(3)
+        	}           
+	}
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	function Calc( f ){
+		var n = Number(f.Input1.value); 
+		//*************************************************************
+		var Xmin = Number(eval(f.Input2.value));		 //式として評価
+		var Xmax = Number(eval(f.Input3.value));		 //式として評価
+		//*************************************************************
+		var DeltaX=Number(GetSelect1Value(f));
+		var X=new Array(); var Y=new Array();
+		var Count=0;
+		for ( var x=Xmin; x<=Xmax; x=x+DeltaX) {
+			X[ Count ]=x;
+			Y[ Count ]=4/Math.PI*Func1( x, n );
+			Count++;
+		}
+		DispXY( f.Disp5, X, Y);
+        Graph( X,Y);
+	}
+//********************************************************************
+</script>
+
+</head> <!-- ****** headの終わり *****-->
+
+<!--  <body>と</body>の間に、Webページの本文を記述する  -->
+<body>  <!-- ****** body の始まり *****-->
+S. Masubuchi<br>
+使い方：nの値を入力→「入力完了」をクリック→「計算開始」をクリック
+<h1>級数で書かれた関数の計算</h1>
+<h4> &emsp; $\displaystyle   f(x, n) = \frac{4}{\pi} \sum _{k=1}^{n} \frac{1}{2k-1} \sin (2k-1)x =\frac{4}{\pi} \left( \sin x + \frac{1}{3}\sin 3x +\frac{1}{5}\sin 5x + \cdots + \frac{1}{2n-1}\sin(2n-1)x \right) $</h4> 
+
+<form name="f1">
+	<h2>1. 値の入力</h2>
+	パラメータnの値を入力(n=1~1000)<br> 
+	<label for="L1">&emsp; n = </label>
+	<input type="text" name="Input1" id="L1" value="1" size="8"><br><br>
+	計算する範囲を入力<br>
+	<label for="L2">&emsp; 最小 Xmin= </label>
+	<input type="text" name="Input2" id="L2" value="-10" size="8">
+	<label for="L3">&emsp; 最大 Xmax= </label>
+	<input type="text" name="Input3" id="L3" value="10" size="8">
+	<label for="L4">&emsp; 刻み幅 DeltaX = </label>
+	<select name="Select1" id="L4">
+		<option value="0.01">0.01</option>
+		<option value="0.05">0.05</option>
+		 <option value="0.1">0.1</option>
+		 <option value="0.5">0.5</option>
+	</select><br><br>
+	<input type="button" name="Complete" value="入力完了" onClick=" Ex4(this.form);">
+	<h2>2. 入力値の表示・確認</h2>
+	<label for="L5">&emsp; n = </label>
+	<input type="text" name="Disp1" id="L5" value=""  size="8"></input>
+	<label for="L6">&emsp; &emsp; Xmin = </label>
+	<input type="text" name="Disp2" id="L6" value=""  size="8"></input>
+	<label for="L7">&emsp; &emsp;Xmax = </label>
+	<input type="text" name="Disp3" id="L7" value=""  size="8"></input>
+	<label for="L8">&emsp; &emsp;DeltaX = </label>
+	<input type="text" name="Disp4" id="L8" value=""  size="8"></input>
+	<h2>3. 計算およびグラフ作成</h2>
+	<input type="button" name="CALC" value="計算開始" onClick="Calc(this.form);"><br>
+	<h3>グラフ</h3>
+<!-- ********************************************************************************** -->
+	<canvas id="canvas1" width="700" height="300""></canvas><br>
+<!-- ********************************************************************************** -->
+	<h3>計算結果</h3>
+	<textarea type="text" name="Disp5" id="L9" value="" rows="20" cols="80"></textarea> 
+
+</form>
+
+</body> <!-- ****** headの終わり *****-->
+
+</html>  <!-- ****** helmの終わり *****-->

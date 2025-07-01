@@ -1,0 +1,111 @@
+<!DOCTYPE html> 
+<html lang="ja">
+
+<head>
+	<meta charset="UTF-8"> 
+	<title>落下運動の計算実験</title> 
+	<style type="text/css">
+		input{
+			font-size : 12pt;
+		}
+		canvas {
+			border: 1px solid black;
+		}
+	</style>
+	
+	<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head> 
+
+<body> 
+
+<h1>落下運動の計算実験</h1>
+<h2>&emsp; \(\displaystyle y=y_0+v_0t-\frac{1}{2}gt^2\)</h2>
+<form name="f1">
+<h2>初期位置と初速度の入力</h2>
+<label for="Y0">&emsp; \(y_0 =\) </label>
+<input type="text" name="Input1" id="Y0" value="500" size="8"> < 700
+<label for="v">&emsp; \(v_0 =\) </label>
+<input type="text" name="Input2" id="V0" value="50" size="8"><br><br>
+
+<input type="button" name="initial" value="初期条件のセット" onClick="init_draw(this.form);" id="ini">
+<input type="button" name="start" value="スタート" onClick="start_animation(this.form);" id="start">
+
+<br><br>
+<canvas id="canvas" width="700" height="700"></canvas>
+ 
+</form>
+
+<script type="text/javascript">
+	const canvas = document.getElementById("canvas");
+	const ctx = canvas.getContext("2d");
+	//const button = document.getElementById("bu");
+	let raf;
+	let timer;
+	var y0;
+	var v0;
+	
+	const ball = {
+		y : canvas.height,
+		x: 100,
+		r: 20,
+		t: 0,
+		color: "red",
+		balldraw() {
+			ctx.beginPath();
+			ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2, true);
+			ctx.closePath();
+			ctx.fillStyle = this.color;
+			ctx.fill();
+		},
+	};
+
+	function get_init( f ){
+		var y0 = Number(f.Input1.value); 
+		var v0 = Number(f.Input2.value);	
+		draw( y0, v0);
+	}
+	// y座標の計算
+	function calc_y( y0, v0, t){
+		const g = 9.8;
+		return y0+v0*t-0.5*g*t*t;
+	}
+	
+	function init_draw(f) {
+		clearInterval(timer);
+		y0 = Number(f.Input1.value); 
+		v0 = Number(f.Input2.value);
+		ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ball.y = canvas.height - y0;
+		ball.balldraw();
+	}
+
+	function draw() {
+		//ctx.clearRect(0, 0, canvas.width, canvas.height);
+		ctx.fillStyle = "rgb(255 255 255 / 30%)";
+  	ctx.fillRect(0, 0, canvas.width, canvas.height);
+		ball.t += 0.1;
+		ball.y = canvas.height - calc_y(y0, v0, ball.t);
+		if (ball.y + ball.r > canvas.height) {
+			ball.y = canvas.height - ball.r;
+		}
+		ball.balldraw();
+		
+		//console.log('this time number is: ' + ball.t);
+		
+		if (ball.t > 500) {
+			clearInterval(timer);
+		}
+	}
+
+	function start_animation (f) {
+		clearInterval(timer);
+		init_draw(f);
+		ball.t = 0;
+		
+		timer = setInterval(draw, 20);
+	}
+	
+	</script>
+	
+</body> 
+</html> 
