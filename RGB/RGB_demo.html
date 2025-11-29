@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>光の三原色デモ</title>
+  <style>
+    :root{
+      --size: 520px;
+      --svg-w: 520px;
+      --svg-h: 300px;
+      font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Roboto, "Segoe UI", Helvetica, Arial;
+      color: #111;
+    }
+    body{
+      display:flex;
+      gap:24px;
+      align-items:flex-start;
+      padding:24px;
+      background:#fafafa;
+    }
+    .demo{
+      width: calc(var(--size));
+      background: white;
+      padding:18px;
+      border-radius:12px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.06);
+    }
+    .controls{
+      width:320px;
+      background:white;
+      padding:18px;
+      border-radius:12px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.06);
+    }
+
+    h1{font-size:18px;margin:0 0 12px 0}
+    p.lead{margin:6px 0 18px 0;color:#444;font-size:13px}
+
+    .svg-wrap{display:block; width:var(--svg-w); height:var(--svg-h);}
+    svg{width:100%;height:auto;display:block}
+
+    /* mix-blend-mode を使って加法混色（疑似的に光の合成）を表現 */
+    .circle{mix-blend-mode:screen; transition: opacity 0.12s linear, transform 0.12s linear;}
+
+    .controls label{display:block;font-size:13px;margin-top:8px}
+    .row{display:flex;align-items:center;gap:8px}
+    input[type=range]{flex:1}
+    .value{width:44px;text-align:right;font-variant-numeric:tabular-nums}
+    .preset{display:flex;gap:8px;margin-top:10px}
+    button{background:#0b69ff;color:white;padding:8px 10px;border-radius:8px;border:0;cursor:pointer}
+    button.ghost{background:#fff;color:#0b69ff;border:1px solid #cfe0ff}
+    .swatch{height:48px;border-radius:8px;border:1px solid #ddd;margin-top:12px;display:flex;align-items:center;justify-content:center}
+    small.hint{display:block;color:#666;margin-top:6px}
+
+    @media (max-width:900px){body{flex-direction:column;align-items:stretch}.controls{width:100%}.demo{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="demo" aria-labelledby="title">
+    <h1 id="title">光の三原色（加法） — 円を重ねて確認</h1>
+    <!--<p class="lead">赤・緑・青の円を重ね、スライダで強さを変えて重なりの色を観察できます。ブラウザの対応により若干見え方が異なる場合があります。</p>-->
+
+    <div class="svg-wrap" role="img" aria-label="重なった三つの円。スライダで色の強さを変えられます"> 
+      <svg viewBox="0 0 520 340" xmlns="http://www.w3.org/2000/svg" id="svg">
+        <!-- 背景グリッド（参考表示） -->
+        <defs>
+          <filter id="soft">
+            <feGaussianBlur stdDeviation="8" />
+          </filter>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#fff" />
+
+        <!-- 円（mix-blend-mode: screen をCSSで指定） -->
+        <g id="circles" style="isolation:isolate">
+          <circle id="cR" class="circle" cx="180" cy="210" r="110" fill="rgb(255,0,0)" fill-opacity="0.6"></circle>
+          <circle id="cG" class="circle" cx="300" cy="210" r="110" fill="rgb(0,255,0)" fill-opacity="0.6"></circle>
+          <circle id="cB" class="circle" cx="240" cy="110"  r="110" fill="rgb(0,0,255)" fill-opacity="0.6"></circle>
+        </g>
+
+        <!-- 中央の重なりを視覚的に示す小さなガイド -->
+        <!--<circle cx="240" cy="180" r="4" fill="#222" opacity="0.08" />-->
+      </svg>
+    </div>
+    <!-- 行間を開ける-->
+    <div style="height:30px"></div>
+    <div class="swatch" id="resultSwatch" aria-hidden="true">重なりの色サンプル（不透明）</div>
+    <small class="hint">注意: 光のように見せるために、スライダを動かすとそれぞれの円の不透明度（強さ）も変わるようにしています。そのため、値が小さいと、重なり色サンプルと違う色に見えます。</small>
+  </div>
+
+  <div class="controls" aria-labelledby="controls-title">
+    <h1 id="controls-title">コントロール</h1>
+
+    <label for="rRange">赤 (Red)</label>
+    <div class="row">
+      <input id="rRange" type="range" min="0" max="255" value="153" />
+      <div class="value" id="rVal">153</div>
+    </div>
+
+    <label for="gRange">緑 (Green)</label>
+    <div class="row">
+      <input id="gRange" type="range" min="0" max="255" value="153" />
+      <div class="value" id="gVal">153</div>
+    </div>
+
+    <label for="bRange">青 (Blue)</label>
+    <div class="row">
+      <input id="bRange" type="range" min="0" max="255" value="153" />
+      <div class="value" id="bVal">153</div>
+    </div>
+
+    <div class="preset">
+      <button id="resetBtn" class="ghost" type="button">リセット</button>
+      <!--<button id="fullBtn" type="button">フル（255）</button>
+      <button id="halfBtn" type="button">中間（128）</button>-->
+    </div>
+
+    <div style="margin-top:12px">
+      <div>重なり中央の合成色:</div>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <div style="width:48px;height:48px;border-radius:6px;border:1px solid #ddd;background:#fff;" id="centerSample"></div>
+        <div style="font-variant-numeric:tabular-nums">
+          <div id="hex">#999999</div>
+          <div id="rgb">rgb(153,153,153)</div>
+        </div>
+      </div>
+    </div>
+
+    <!--<small class="hint">注: ブラウザの実装によって混色の見え方が微妙に違います。推奨は最新のChrome/Firefox/Edge/Safari。</small>-->
+  </div>
+
+  <script>
+    // 要素取得
+    const rRange = document.getElementById('rRange');
+    const gRange = document.getElementById('gRange');
+    const bRange = document.getElementById('bRange');
+    const rVal = document.getElementById('rVal');
+    const gVal = document.getElementById('gVal');
+    const bVal = document.getElementById('bVal');
+
+    const cR = document.getElementById('cR');
+    const cG = document.getElementById('cG');
+    const cB = document.getElementById('cB');
+
+    const centerSample = document.getElementById('centerSample');
+    const hexLabel = document.getElementById('hex');
+    const rgbLabel = document.getElementById('rgb');
+    const resultSwatch = document.getElementById('resultSwatch');
+
+    // SVG を一時的にキャンバスに描き、それから中央ピクセルの色を読むことで
+    // 重なりの合成色（ブラウザの実際のブレンド結果に近い）を計算します。
+    // これによりスクリーンブレンドの見え方と一致するサンプルが得られます。
+
+    function update() {
+      const rv = parseInt(rRange.value,10);
+      const gv = parseInt(gRange.value,10);
+      const bv = parseInt(bRange.value,10);
+      rVal.textContent = rv;
+      gVal.textContent = gv;
+      bVal.textContent = bv;
+
+      // 各円の不透明度を 0..1 にして SVG 要素の fill-opacity に適用
+      // 強さ（0-255）を 0-1 に線形変換して不透明度に使うのが直感的
+      // toFixed(3) で小数点以下3桁に丸めておく
+      const aR = (rv/255).toFixed(3);
+      const aG = (gv/255).toFixed(3);
+      const aB = (bv/255).toFixed(3);
+
+      cR.setAttribute('fill-opacity', aR);
+      cG.setAttribute('fill-opacity', aG);
+      cB.setAttribute('fill-opacity', aB);
+
+      // 中央ピクセルの合成色を取得するために SVG を一度キャンバスに描画
+      // 手順: SVG文字列を作り、画像にしてキャンバスへ描画 -> getImageData
+      // 注意: 同一オリジンや外部フォントで問題になることがあるが、基本的なブラウザ実装では動作します。
+
+      const svg = document.getElementById('svg');
+      const serializer = new XMLSerializer();
+      const svgString = serializer.serializeToString(svg);
+      const svgBlob = new Blob([svgString], {type: 'image/svg+xml;charset=utf-8'});
+      const url = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = svg.viewBox.baseVal.width || 520;
+        canvas.height = svg.viewBox.baseVal.height || 300;
+        const ctx = canvas.getContext('2d');
+        // ブレンド方法はブラウザの描画と完全に一致しない可能性があるが、視覚的に十分
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img,0,0);
+
+        // 中央近辺のピクセルを平均化して色を取得（中央位置は 240,136 にあわせる）
+        const cx = Math.round(240);
+        const cy = Math.round(210);
+        const sampleSize = 5; // 5x5 ピクセル平均
+        const imgData = ctx.getImageData(cx - 2, cy - 2, sampleSize, sampleSize).data;
+        let rs=0,gs=0,bs=0,as=0;
+        for(let i=0;i<imgData.length;i+=4){
+          rs += imgData[i];
+          gs += imgData[i+1];
+          bs += imgData[i+2];
+          as += imgData[i+3];
+        }
+        const count = imgData.length/4;
+        const r = Math.round(rs/count);
+        const g = Math.round(gs/count);
+        const b = Math.round(bs/count);
+        const a = (Math.round(as/count))/255;
+
+        const hex = '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('').toUpperCase();
+        centerSample.style.background = `rgba(${rv}, ${gv}, ${bv}, ${a})`;
+        hexLabel.textContent = hex;
+        rgbLabel.textContent = `rgba(${rv}, ${gv}, ${bv}, ${a.toFixed(2)})`;
+        //resultSwatch.style.background = `linear-gradient(90deg, rgba(${rv},0,0,${aR}), rgba(0,${gv},0,${aG}), rgba(0,0,${bv},${aB}))`;
+        resultSwatch.style.background = `rgba(${rv},${gv},${bv},1)`;
+
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = (e) => { URL.revokeObjectURL(url); /* ignore errors silently */ };
+      img.src = url;
+    }
+
+    // 初期化
+    [rRange,gRange,bRange].forEach(el=>el.addEventListener('input', update));
+    document.getElementById('resetBtn').addEventListener('click', ()=>{ rRange.value=153; gRange.value=153; bRange.value=153; update(); });
+        
+    // 最初の描画
+    update();
+
+    // キーボード操作の改善（スライダの値表示を即座に反映）
+    [rRange,gRange,bRange].forEach(range=>{
+      range.addEventListener('keydown', (e)=>{
+        // +- で微調整
+        if(e.key === '+' || e.key === '=') { range.value = Math.min(255, Number(range.value)+1); update(); e.preventDefault(); }
+        if(e.key === '-') { range.value = Math.max(0, Number(range.value)-1); update(); e.preventDefault(); }
+      });
+    });
+
+  </script>
+</body>
+</html>
