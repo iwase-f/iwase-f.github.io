@@ -3,191 +3,138 @@
 <head>
     <meta charset="UTF-8">
     <title>Exponential Scale Piano</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            font-family: sans-serif;
-            margin-top: 50px;
-            background-color: #f0f0f0;
-        }
-        #keyboard {
-            position: relative;
-            display: flex;
+        /* タッチ・ズーム・選択を徹底的に無効化 */
+        body { 
+            display: flex; flex-direction: column; align-items: center; 
+            font-family: sans-serif; margin-top: 50px; background-color: #f0f0f0; 
+            touch-action: none; /* 全体でのスクロールやズームを防止 */
+            -webkit-touch-callout: none; /* 長押しメニュー防止 */
+            -webkit-user-select: none; /* テキスト選択防止 */
             user-select: none;
-            touch-action: none; /* スマホでのスクロールやズームを防止 */
         }
-        .key {
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            padding-bottom: 10px;
-            font-weight: bold;
-            box-sizing: border-box;
-            border-radius: 0 0 5px 5px;
-            cursor: pointer; /* マウス操作時に指マークにする */
-        }
-        .white {
-            width: 60px;
-            height: 250px;
-            background-color: white;
-            border: 1px solid #333;
-            color: #333;
-            z-index: 1;
-        }
-        .white.active {
-            background-color: #e0e0e0;
-        }
-        .black {
-            width: 40px;
-            height: 150px;
-            background-color: #333;
-            color: white;
-            position: absolute;
-            z-index: 2;
-        }
-        .black.active {
-            background-color: #666;
-        }
-        .cs { left: 40px; } 
-        .ds { left: 100px; }
-        .fs { left: 220px; }
-        .gs { left: 280px; }
-        .as { left: 340px; }
+        #keyboard { position: relative; display: flex; margin-top: 20px;}
+        .key { display: flex; justify-content: center; align-items: flex-end; padding-bottom: 10px; font-weight: bold; box-sizing: border-box; border-radius: 0 0 5px 5px; cursor: pointer; font-size: 1.2rem; }
+        .white { width: 60px; height: 250px; background-color: white; border: 1px solid #333; color: #333; z-index: 1; }
+        .white.active { background-color: #e0e0e0; }
+        .black { width: 40px; height: 150px; background-color: #333; color: white; position: absolute; z-index: 2; }
+        .black.active { background-color: #666; }
+        .cs { left: 40px; } .ds { left: 100px; } .fs { left: 220px; } .gs { left: 280px; } .as { left: 340px; }
+        .instructions { margin-bottom: 20px; text-align: center; padding: 0 10px;}
         
-        .instructions {
-            margin-bottom: 20px;
-            text-align: center;
+        #status {
+            padding: 5px 10px; background-color: #ffcccc; color: #cc0000;
+            border-radius: 5px; font-size: 0.9rem; margin-bottom: 10px;
         }
+        #status.ready { background-color: #ccffcc; color: #006600; }
     </style>
 </head>
 <body>
 
     <div class="instructions">
-        <h2>Exponential Scale Piano (平均律ピアノ)</h2>
-        <p>キーボード、クリック、タッチで音が鳴ります。<br>
-        白鍵: A S D F G H J K<br>
-        黒鍵: W E (空き) T Y U</p>
+        <h2>Exponential Scale Piano</h2>
+        <p>従来の平均律（等比数列による周波数の増加）です。</p>
+        <div id="status">画面のどこかをタッチしてオーディオを有効化してください</div>
     </div>
 
     <div id="keyboard">
-        <div class="key white" id="key-a">A (C4)</div>
-        <div class="key white" id="key-s">S (D)</div>
-        <div class="key white" id="key-d">D (E)</div>
-        <div class="key white" id="key-f">F (F)</div>
-        <div class="key white" id="key-g">G (G)</div>
-        <div class="key white" id="key-h">H (A)</div>
-        <div class="key white" id="key-j">J (B)</div>
-        <div class="key white" id="key-k">K (C5)</div>
+        <div class="key white" id="key-a">C4</div><div class="key white" id="key-s">D</div>
+        <div class="key white" id="key-d">E</div><div class="key white" id="key-f">F</div>
+        <div class="key white" id="key-g">G</div><div class="key white" id="key-h">A</div>
+        <div class="key white" id="key-j">B</div><div class="key white" id="key-k">C5</div>
 
-        <div class="key black cs" id="key-w">W</div>
-        <div class="key black ds" id="key-e">E</div>
-        <div class="key black fs" id="key-t">T</div>
-        <div class="key black gs" id="key-y">Y</div>
-        <div class="key black as" id="key-u">U</div>
+        <div class="key black cs" id="key-w"></div><div class="key black ds" id="key-e"></div>
+        <div class="key black fs" id="key-t"></div><div class="key black gs" id="key-y"></div>
+        <div class="key black as" id="key-u"></div>
     </div>
 
     <script>
         const AudioContext = window.AudioContext || window.webkitAudioContext;
-        let audioCtx;
-        let compressor;
-
+        let audioCtx, compressor;
+        let isAudioUnlocked = false; 
         const activeOscillators = {};
 
         const keyMap = {
-            'a': { freq: 261.63, note: 'C4' },
-            'w': { freq: 277.18, note: 'C#4' },
-            's': { freq: 293.66, note: 'D4' },
-            'e': { freq: 311.13, note: 'D#4' },
-            'd': { freq: 329.63, note: 'E4' },
-            'f': { freq: 349.23, note: 'F4' },
-            't': { freq: 369.99, note: 'F#4' },
-            'g': { freq: 392.00, note: 'G4' },
-            'y': { freq: 415.30, note: 'G#4' },
-            'h': { freq: 440.00, note: 'A4' },
-            'u': { freq: 466.16, note: 'A#4' },
-            'j': { freq: 493.88, note: 'B4' },
-            'k': { freq: 523.25, note: 'C5' }
+            'a': { freq: 261.63 }, 'w': { freq: 277.18 }, 's': { freq: 293.66 },
+            'e': { freq: 311.13 }, 'd': { freq: 329.63 }, 'f': { freq: 349.23 },
+            't': { freq: 369.99 }, 'g': { freq: 392.00 }, 'y': { freq: 415.30 },
+            'h': { freq: 440.00 }, 'u': { freq: 466.16 }, 'j': { freq: 493.88 }, 'k': { freq: 523.25 }
         };
 
-        function initAudio() {
-            // ① まだオーディオシステムが作られていなければ作成する
-            if (!audioCtx) {
-                // 古いSafari(iOS)にも対応するための記述
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext();
-                
-                compressor = audioCtx.createDynamicsCompressor();
-                compressor.threshold.setValueAtTime(-10, audioCtx.currentTime);
-                compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
-                compressor.connect(audioCtx.destination);
+        // iOS Safariのダブルタップ拡大を防止する処理
+        let lastTouch = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = window.performance.now();
+            if (now - lastTouch <= 300) {
+                e.preventDefault();
             }
+            lastTouch = now;
+        }, { passive: false });
 
-            // ② 【追加】スマホのブラウザ制限対策
-            // オーディオシステムが一時停止状態（suspended）になっていたら、強制的に再開させる
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
+        function unlockAudio() {
+            if (isAudioUnlocked) return;
+            audioCtx = new AudioContext();
+            compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.setValueAtTime(-10, audioCtx.currentTime);
+            compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+            compressor.connect(audioCtx.destination);
+
+            const buffer = audioCtx.createBuffer(1, 1, 22050);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer; source.connect(audioCtx.destination); source.start(0);
+
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            isAudioUnlocked = true;
+            
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = "オーディオ準備完了！鍵盤をタッチしてください";
+            statusEl.classList.add('ready');
+
+            document.removeEventListener('touchstart', unlockAudio);
+            document.removeEventListener('pointerdown', unlockAudio);
         }
 
+        document.addEventListener('touchstart', unlockAudio, { once: true });
+        document.addEventListener('pointerdown', unlockAudio, { once: true });
+
         function playNote(key) {
-            if (!keyMap[key] || activeOscillators[key]) return;
-            initAudio();
+            if (!isAudioUnlocked || !keyMap[key] || activeOscillators[key]) return;
+            // Chrome向けの念のための制限解除呼び出し
+            if (audioCtx.state === 'suspended') audioCtx.resume();
 
             const osc = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
-
-            osc.type = 'sine';
-            osc.frequency.value = keyMap[key].freq;
-
+            osc.type = 'sine'; osc.frequency.value = keyMap[key].freq;
             gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
             gainNode.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 0.05);
-
-            osc.connect(gainNode);
-            gainNode.connect(compressor);
-            osc.start();
-
+            osc.connect(gainNode); gainNode.connect(compressor); osc.start();
             activeOscillators[key] = { osc, gainNode };
-
-            const keyElement = document.getElementById('key-' + key);
-            if (keyElement) keyElement.classList.add('active');
+            document.getElementById('key-' + key).classList.add('active');
         }
 
         function stopNote(key) {
             if (activeOscillators[key]) {
                 const { osc, gainNode } = activeOscillators[key];
-                
                 gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
                 osc.stop(audioCtx.currentTime + 0.1);
-
                 delete activeOscillators[key];
-
-                const keyElement = document.getElementById('key-' + key);
-                if (keyElement) keyElement.classList.remove('active');
+                document.getElementById('key-' + key).classList.remove('active');
             }
         }
 
-        // --- PCキーボード用のイベント ---
         window.addEventListener('keydown', (e) => { playNote(e.key.toLowerCase()); });
         window.addEventListener('keyup', (e) => { stopNote(e.key.toLowerCase()); });
 
-        // --- クリック・タッチ用のイベント ---
         document.querySelectorAll('.key').forEach(keyElement => {
-            const key = keyElement.id.split('-')[1]; // id(例: key-a)から'a'を取得
-
-            keyElement.addEventListener('pointerdown', (e) => {
-                playNote(key);
-                keyElement.setPointerCapture(e.pointerId); // 指がズレても追跡
+            const key = keyElement.id.split('-')[1];
+            keyElement.addEventListener('pointerdown', (e) => { 
+                playNote(key); keyElement.setPointerCapture(e.pointerId); 
             });
-
-            keyElement.addEventListener('pointerup', (e) => {
-                stopNote(key);
-                keyElement.releasePointerCapture(e.pointerId);
+            keyElement.addEventListener('pointerup', (e) => { 
+                stopNote(key); keyElement.releasePointerCapture(e.pointerId); 
             });
-
-            // 要素からカーソルや指が外れた場合
             keyElement.addEventListener('pointerleave', () => stopNote(key));
             keyElement.addEventListener('pointercancel', () => stopNote(key));
         });

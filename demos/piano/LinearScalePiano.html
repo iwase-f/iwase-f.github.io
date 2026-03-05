@@ -3,23 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <title>Linear Scale Piano</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <style>
-        body { display: flex; flex-direction: column; align-items: center; font-family: sans-serif; margin-top: 50px; background-color: #f0f0f0; }
-        #keyboard { position: relative; display: flex; user-select: none; touch-action: none; }
+        /* タッチ・ズーム・選択を徹底的に無効化 */
+        body { 
+            display: flex; flex-direction: column; align-items: center; 
+            font-family: sans-serif; margin-top: 50px; background-color: #f0f0f0; 
+            touch-action: none; 
+            -webkit-touch-callout: none; 
+            -webkit-user-select: none; 
+            user-select: none;
+        }
+        #keyboard { position: relative; display: flex; margin-top: 20px;}
         .key { display: flex; justify-content: center; align-items: flex-end; padding-bottom: 10px; font-weight: bold; box-sizing: border-box; border-radius: 0 0 5px 5px; cursor: pointer; font-size: 1.2rem; }
         .white { width: 60px; height: 250px; background-color: white; border: 1px solid #333; color: #333; z-index: 1; }
         .white.active { background-color: #e0e0e0; }
         .black { width: 40px; height: 150px; background-color: #333; color: white; position: absolute; z-index: 2; }
         .black.active { background-color: #666; }
         .cs { left: 40px; } .ds { left: 100px; } .fs { left: 220px; } .gs { left: 280px; } .as { left: 340px; }
-        .instructions { margin-bottom: 20px; text-align: center; }
+        .instructions { margin-bottom: 20px; text-align: center; padding: 0 10px;}
+        
+        #status {
+            padding: 5px 10px; background-color: #ffcccc; color: #cc0000;
+            border-radius: 5px; font-size: 0.9rem; margin-bottom: 10px;
+        }
+        #status.ready { background-color: #ccffcc; color: #006600; }
     </style>
 </head>
 <body>
 
     <div class="instructions">
-        <h2>Linear Scale Piano (C,D 基準) 等差数列ピアノ</h2>
-        <p>C4(261.63Hz)とD4の差分 Δf=32.03Hz を基準としています。</p>
+        <h2>Linear Scale Piano</h2>
+        <p>C4とD4の差分 Δf=32.03Hz を基準とした等差数列スケールです。</p>
+        <div id="status">画面のどこかをタッチしてオーディオを有効化してください</div>
     </div>
 
     <div id="keyboard">
@@ -36,6 +52,7 @@
     <script>
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx, compressor;
+        let isAudioUnlocked = false; 
         const activeOscillators = {};
 
         const fC = 261.63; 
@@ -51,29 +68,46 @@
             't': { freq: fC + 3.5 * df }, 'y': { freq: fC + 4.5 * df }, 'u': { freq: fC + 5.5 * df }
         };
 
-        function initAudio() {
-            // ① まだオーディオシステムが作られていなければ作成する
-            if (!audioCtx) {
-                // 古いSafari(iOS)にも対応するための記述
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                audioCtx = new AudioContext();
-                
-                compressor = audioCtx.createDynamicsCompressor();
-                compressor.threshold.setValueAtTime(-10, audioCtx.currentTime);
-                compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
-                compressor.connect(audioCtx.destination);
+        // iOS Safariのダブルタップ拡大を防止する処理
+        let lastTouch = 0;
+        document.addEventListener('touchend', (e) => {
+            const now = window.performance.now();
+            if (now - lastTouch <= 300) {
+                e.preventDefault();
             }
+            lastTouch = now;
+        }, { passive: false });
 
-            // ② 【追加】スマホのブラウザ制限対策
-            // オーディオシステムが一時停止状態（suspended）になっていたら、強制的に再開させる
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
+        function unlockAudio() {
+            if (isAudioUnlocked) return;
+            audioCtx = new AudioContext();
+            compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.setValueAtTime(-10, audioCtx.currentTime);
+            compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+            compressor.connect(audioCtx.destination);
+
+            const buffer = audioCtx.createBuffer(1, 1, 22050);
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer; source.connect(audioCtx.destination); source.start(0);
+
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            isAudioUnlocked = true;
+            
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = "オーディオ準備完了！鍵盤をタッチしてください";
+            statusEl.classList.add('ready');
+
+            document.removeEventListener('touchstart', unlockAudio);
+            document.removeEventListener('pointerdown', unlockAudio);
         }
 
+        document.addEventListener('touchstart', unlockAudio, { once: true });
+        document.addEventListener('pointerdown', unlockAudio, { once: true });
+
         function playNote(key) {
-            if (!keyMap[key] || activeOscillators[key]) return;
-            initAudio();
+            if (!isAudioUnlocked || !keyMap[key] || activeOscillators[key]) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
             const osc = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
             osc.type = 'sine'; osc.frequency.value = keyMap[key].freq;
@@ -100,8 +134,12 @@
 
         document.querySelectorAll('.key').forEach(keyElement => {
             const key = keyElement.id.split('-')[1];
-            keyElement.addEventListener('pointerdown', (e) => { playNote(key); keyElement.setPointerCapture(e.pointerId); });
-            keyElement.addEventListener('pointerup', (e) => { stopNote(key); keyElement.releasePointerCapture(e.pointerId); });
+            keyElement.addEventListener('pointerdown', (e) => { 
+                playNote(key); keyElement.setPointerCapture(e.pointerId); 
+            });
+            keyElement.addEventListener('pointerup', (e) => { 
+                stopNote(key); keyElement.releasePointerCapture(e.pointerId); 
+            });
             keyElement.addEventListener('pointerleave', () => stopNote(key));
             keyElement.addEventListener('pointercancel', () => stopNote(key));
         });
