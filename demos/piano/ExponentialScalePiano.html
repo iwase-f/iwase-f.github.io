@@ -112,15 +112,22 @@
         };
 
         function initAudio() {
+            // ① まだオーディオシステムが作られていなければ作成する
             if (!audioCtx) {
+                // 古いSafari(iOS)にも対応するための記述
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
                 audioCtx = new AudioContext();
+                
                 compressor = audioCtx.createDynamicsCompressor();
                 compressor.threshold.setValueAtTime(-10, audioCtx.currentTime);
-                compressor.knee.setValueAtTime(10, audioCtx.currentTime);
                 compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
-                compressor.attack.setValueAtTime(0.001, audioCtx.currentTime);
-                compressor.release.setValueAtTime(0.1, audioCtx.currentTime);
                 compressor.connect(audioCtx.destination);
+            }
+
+            // ② 【追加】スマホのブラウザ制限対策
+            // オーディオシステムが一時停止状態（suspended）になっていたら、強制的に再開させる
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
             }
         }
 
