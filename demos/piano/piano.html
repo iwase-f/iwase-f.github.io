@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Web Piano (コンプレッサー搭載版)</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: sans-serif;
+            margin-top: 50px;
+            background-color: #f0f0f0;
+        }
+        #keyboard {
+            position: relative;
+            display: flex;
+            user-select: none;
+        }
+        .key {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: 10px;
+            font-weight: bold;
+            box-sizing: border-box;
+            border-radius: 0 0 5px 5px;
+        }
+        .white {
+            width: 60px;
+            height: 250px;
+            background-color: white;
+            border: 1px solid #333;
+            color: #333;
+            z-index: 1;
+        }
+        .white.active {
+            background-color: #e0e0e0;
+        }
+        .black {
+            width: 40px;
+            height: 150px;
+            background-color: #333;
+            color: white;
+            position: absolute;
+            z-index: 2;
+        }
+        .black.active {
+            background-color: #666;
+        }
+        .cs { left: 40px; } 
+        .ds { left: 100px; }
+        .fs { left: 220px; }
+        .gs { left: 280px; }
+        .as { left: 340px; }
+        
+        .instructions {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="instructions">
+        <h2>Web Piano (Clipping Prevented)</h2>
+        <p>キーボードのキーを押すと音が鳴ります。<br>
+        白鍵: A S D F G H J K<br>
+        黒鍵: W E (空き) T Y U</p>
+    </div>
+
+    <div id="keyboard">
+        <div class="key white" id="key-a">A (C4)</div>
+        <div class="key white" id="key-s">S (D)</div>
+        <div class="key white" id="key-d">D (E)</div>
+        <div class="key white" id="key-f">F (F)</div>
+        <div class="key white" id="key-g">G (G)</div>
+        <div class="key white" id="key-h">H (A)</div>
+        <div class="key white" id="key-j">J (B)</div>
+        <div class="key white" id="key-k">K (C5)</div>
+
+        <div class="key black cs" id="key-w">W</div>
+        <div class="key black ds" id="key-e">E</div>
+        <div class="key black fs" id="key-t">T</div>
+        <div class="key black gs" id="key-y">Y</div>
+        <div class="key black as" id="key-u">U</div>
+    </div>
+
+    <script>
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+        let compressor; // コンプレッサー用の変数を追加
+
+        const activeOscillators = {};
+
+        const keyMap = {
+            'a': { freq: 261.63, note: 'C4' },
+            'w': { freq: 277.18, note: 'C#4' },
+            's': { freq: 293.66, note: 'D4' },
+            'e': { freq: 311.13, note: 'D#4' },
+            'd': { freq: 329.63, note: 'E4' },
+            'f': { freq: 349.23, note: 'F4' },
+            't': { freq: 369.99, note: 'F#4' },
+            'g': { freq: 392.00, note: 'G4' },
+            'y': { freq: 415.30, note: 'G#4' },
+            'h': { freq: 440.00, note: 'A4' },
+            'u': { freq: 466.16, note: 'A#4' },
+            'j': { freq: 493.88, note: 'B4' },
+            'k': { freq: 523.25, note: 'C5' }
+        };
+
+        // オーディオ初期化とコンプレッサーの設定を行う関数
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+                
+                // コンプレッサーの作成
+                compressor = audioCtx.createDynamicsCompressor();
+                
+                // コンプレッサーのパラメータ設定（リミッターとして機能させる）
+                compressor.threshold.setValueAtTime(-10, audioCtx.currentTime); // -10dBを超えたら圧縮開始
+                compressor.knee.setValueAtTime(10, audioCtx.currentTime);        // 圧縮のカーブの滑らかさ
+                compressor.ratio.setValueAtTime(12, audioCtx.currentTime);       // 圧縮比率（高めに設定して上限を厳格に守る）
+                compressor.attack.setValueAtTime(0.001, audioCtx.currentTime);   // アタックタイム（即座に反応）
+                compressor.release.setValueAtTime(0.1, audioCtx.currentTime);    // リリースタイム
+                
+                // コンプレッサーを最終的な出力(スピーカー)に接続
+                compressor.connect(audioCtx.destination);
+            }
+        }
+
+        function playNote(key) {
+            if (!keyMap[key] || activeOscillators[key]) return;
+
+            initAudio(); // 変更点: オーディオ初期化処理を分離して呼び出し
+
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.value = keyMap[key].freq;
+
+            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            // 個々の音量は少し大きめ(0.6)に設定しても、コンプレッサーが全体を調整します
+            gainNode.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 0.05);
+
+            // 変更点: destinationではなく、コンプレッサーに接続する
+            osc.connect(gainNode);
+            gainNode.connect(compressor);
+            osc.start();
+
+            activeOscillators[key] = { osc, gainNode };
+
+            const keyElement = document.getElementById('key-' + key);
+            if (keyElement) keyElement.classList.add('active');
+        }
+
+        function stopNote(key) {
+            if (activeOscillators[key]) {
+                const { osc, gainNode } = activeOscillators[key];
+                
+                gainNode.gain.setValueAtTime(gainNode.gain.value, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+                osc.stop(audioCtx.currentTime + 0.1);
+
+                delete activeOscillators[key];
+
+                const keyElement = document.getElementById('key-' + key);
+                if (keyElement) keyElement.classList.remove('active');
+            }
+        }
+
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            playNote(key);
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            stopNote(key);
+        });
+
+    </script>
+</body>
+</html>
