@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>Web Piano (コンプレッサー搭載版)</title>
+    <title>Exponential Scale Piano</title>
     <style>
         body {
             display: flex;
@@ -16,6 +16,7 @@
             position: relative;
             display: flex;
             user-select: none;
+            touch-action: none; /* スマホでのスクロールやズームを防止 */
         }
         .key {
             display: flex;
@@ -25,6 +26,7 @@
             font-weight: bold;
             box-sizing: border-box;
             border-radius: 0 0 5px 5px;
+            cursor: pointer; /* マウス操作時に指マークにする */
         }
         .white {
             width: 60px;
@@ -63,8 +65,8 @@
 <body>
 
     <div class="instructions">
-        <h2>Web Piano (Clipping Prevented)</h2>
-        <p>キーボードのキーを押すと音が鳴ります。<br>
+        <h2>Exponential Scale Piano (平均律ピアノ)</h2>
+        <p>キーボード、クリック、タッチで音が鳴ります。<br>
         白鍵: A S D F G H J K<br>
         黒鍵: W E (空き) T Y U</p>
     </div>
@@ -89,7 +91,7 @@
     <script>
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
-        let compressor; // コンプレッサー用の変数を追加
+        let compressor;
 
         const activeOscillators = {};
 
@@ -109,30 +111,22 @@
             'k': { freq: 523.25, note: 'C5' }
         };
 
-        // オーディオ初期化とコンプレッサーの設定を行う関数
         function initAudio() {
             if (!audioCtx) {
                 audioCtx = new AudioContext();
-                
-                // コンプレッサーの作成
                 compressor = audioCtx.createDynamicsCompressor();
-                
-                // コンプレッサーのパラメータ設定（リミッターとして機能させる）
-                compressor.threshold.setValueAtTime(-10, audioCtx.currentTime); // -10dBを超えたら圧縮開始
-                compressor.knee.setValueAtTime(10, audioCtx.currentTime);        // 圧縮のカーブの滑らかさ
-                compressor.ratio.setValueAtTime(12, audioCtx.currentTime);       // 圧縮比率（高めに設定して上限を厳格に守る）
-                compressor.attack.setValueAtTime(0.001, audioCtx.currentTime);   // アタックタイム（即座に反応）
-                compressor.release.setValueAtTime(0.1, audioCtx.currentTime);    // リリースタイム
-                
-                // コンプレッサーを最終的な出力(スピーカー)に接続
+                compressor.threshold.setValueAtTime(-10, audioCtx.currentTime);
+                compressor.knee.setValueAtTime(10, audioCtx.currentTime);
+                compressor.ratio.setValueAtTime(12, audioCtx.currentTime);
+                compressor.attack.setValueAtTime(0.001, audioCtx.currentTime);
+                compressor.release.setValueAtTime(0.1, audioCtx.currentTime);
                 compressor.connect(audioCtx.destination);
             }
         }
 
         function playNote(key) {
             if (!keyMap[key] || activeOscillators[key]) return;
-
-            initAudio(); // 変更点: オーディオ初期化処理を分離して呼び出し
+            initAudio();
 
             const osc = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
@@ -141,10 +135,8 @@
             osc.frequency.value = keyMap[key].freq;
 
             gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-            // 個々の音量は少し大きめ(0.6)に設定しても、コンプレッサーが全体を調整します
             gainNode.gain.linearRampToValueAtTime(0.6, audioCtx.currentTime + 0.05);
 
-            // 変更点: destinationではなく、コンプレッサーに接続する
             osc.connect(gainNode);
             gainNode.connect(compressor);
             osc.start();
@@ -170,16 +162,28 @@
             }
         }
 
-        window.addEventListener('keydown', (e) => {
-            const key = e.key.toLowerCase();
-            playNote(key);
-        });
+        // --- PCキーボード用のイベント ---
+        window.addEventListener('keydown', (e) => { playNote(e.key.toLowerCase()); });
+        window.addEventListener('keyup', (e) => { stopNote(e.key.toLowerCase()); });
 
-        window.addEventListener('keyup', (e) => {
-            const key = e.key.toLowerCase();
-            stopNote(key);
-        });
+        // --- クリック・タッチ用のイベント ---
+        document.querySelectorAll('.key').forEach(keyElement => {
+            const key = keyElement.id.split('-')[1]; // id(例: key-a)から'a'を取得
 
+            keyElement.addEventListener('pointerdown', (e) => {
+                playNote(key);
+                keyElement.setPointerCapture(e.pointerId); // 指がズレても追跡
+            });
+
+            keyElement.addEventListener('pointerup', (e) => {
+                stopNote(key);
+                keyElement.releasePointerCapture(e.pointerId);
+            });
+
+            // 要素からカーソルや指が外れた場合
+            keyElement.addEventListener('pointerleave', () => stopNote(key));
+            keyElement.addEventListener('pointercancel', () => stopNote(key));
+        });
     </script>
 </body>
 </html>
