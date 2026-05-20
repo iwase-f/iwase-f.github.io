@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>連続と離散の境界（音波デモ）</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background-color: #f0f0f0; margin: 0; padding: 20px; }
+        .container { background: white; padding: 20px; border-radius: 8px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        canvas { background: #222; width: 100%; max-width: 600px; height: 300px; margin-top: 20px; border-radius: 8px; }
+        input[type="range"] { width: 90%; margin: 15px 0; cursor: pointer; }
+        .val-display { font-weight: bold; color: #00ffcc; background: #333; padding: 4px 12px; border-radius: 4px; display: inline-block; margin-bottom: 10px; }
+        button { background: #ff0066; color: white; border: none; padding: 15px 30px; font-size: 1.2em; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 15px; }
+        button:hover { background: #cc0052; }
+        p { margin: 5px 0; font-weight: bold; color: #333; }
+        #errorLog { color: red; font-weight: bold; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h3 style="margin-top:0;">音のサンプリングと量子化</h3>
+        <div id="errorLog"></div>
+
+        <p>① 時間の区切り（横軸の解像度）</p>
+        <input type="range" id="timeSlider" min="4" max="200" value="200">
+        <div><span id="timeVal" class="val-display">滑らか (連続的)</span></div>
+
+        <p>② 音量の区切り（縦軸の解像度）</p>
+        <input type="range" id="ampSlider" min="2" max="100" value="100">
+        <div><span id="ampVal" class="val-display">滑らか (連続的)</span></div>
+
+        <button id="playBtn">▶ 音を鳴らす (440Hz)</button>
+    </div>
+
+    <canvas id="waveCanvas" width="600" height="300"></canvas>
+
+    <script>
+        window.onload = function() {
+            const canvas = document.getElementById('waveCanvas');
+            const ctx = canvas.getContext('2d');
+            const timeSlider = document.getElementById('timeSlider');
+            const ampSlider = document.getElementById('ampSlider');
+            const timeVal = document.getElementById('timeVal');
+            const ampVal = document.getElementById('ampVal');
+            const playBtn = document.getElementById('playBtn');
+            const errorLog = document.getElementById('errorLog');
+
+            // スライダーの値表示を更新
+            function updateLabels() {
+                const ts = parseInt(timeSlider.value, 10);
+                const as = parseInt(ampSlider.value, 10);
+                timeVal.textContent = ts >= 190 ? "滑らか (連続的)" : "波を " + ts + " 分割";
+                ampVal.textContent = as >= 90 ? "滑らか (連続的)" : "振幅を " + as + " 段階";
+            }
+
+            timeSlider.oninput = updateLabels;
+            ampSlider.oninput = updateLabels;
+            updateLabels();
+
+            // 波形の描画処理
+            function drawWave() {
+                ctx.fillStyle = '#222';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                const ts = parseInt(timeSlider.value, 10);
+                const as = parseInt(ampSlider.value, 10);
+                const centerY = canvas.height / 2;
+                const amp = 100;
+                const periods = 2; 
+
+                // 背景の滑らかな波（グレー）
+                ctx.beginPath();
+                for (let x = 0; x <= canvas.width; x++) {
+                    const t = x / canvas.width;
+                    const y = centerY - Math.sin(t * periods * Math.PI * 2) * amp;
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.strokeStyle = '#444';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // 離散化された波（シアン色）
+                ctx.beginPath();
+                for (let x = 0; x <= canvas.width; x++) {
+                    const t = x / canvas.width;
+                    const phase = t * periods;
+                    
+                    const discretePhase = (ts >= 190) ? phase : Math.floor(phase * ts) / ts;
+                    const rawVal = Math.sin(discretePhase * Math.PI * 2);
+                    const quantizedVal = (as >= 90) ? rawVal : Math.round(rawVal * (as / 2)) / (as / 2);
+                    
+                    const y = centerY - quantizedVal * amp;
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.strokeStyle = '#00ffcc';
+                ctx.lineWidth = 3;
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+            }
+
+            // 【重要】正n角形デモで成功した描画ループを採用
+            function renderLoop() {
+                drawWave();
+                requestAnimationFrame(renderLoop);
+            }
+            requestAnimationFrame(renderLoop);
+
+            // 音声再生処理
+            let audioCtx;
+            playBtn.onclick = function() {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (!audioCtx) {
+                        audioCtx = new AudioContext();
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    const ts = parseInt(timeSlider.value, 10);
+                    const as = parseInt(ampSlider.value, 10);
+                    const duration = 1.0; 
+                    const freq = 440; 
+                    const sampleRate = audioCtx.sampleRate;
+                    const frameCount = Math.floor(sampleRate * duration);
+                    
+                    const buffer = audioCtx.createBuffer(1, frameCount, sampleRate);
+                    const data = buffer.getChannelData(0);
+
+                    // 描画と全く同じ計算で音声波形データを生成
+                    for (let i = 0; i < frameCount; i++) {
+                        const t = i / sampleRate;
+                        const phase = t * freq;
+                        const discretePhase = (ts >= 190) ? phase : Math.floor(phase * ts) / ts;
+                        const rawVal = Math.sin(discretePhase * Math.PI * 2);
+                        const quantizedVal = (as >= 90) ? rawVal : Math.round(rawVal * (as / 2)) / (as / 2);
+                        data[i] = quantizedVal;
+                    }
+
+                    const source = audioCtx.createBufferSource();
+                    source.buffer = buffer;
+
+                    // プツッというノイズを防ぐフェード処理（音量を少し上げました）
+                    const gain = audioCtx.createGain();
+                    gain.gain.setValueAtTime(0, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.05); 
+                    gain.gain.setValueAtTime(0.5, audioCtx.currentTime + duration - 0.05);
+                    gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + duration);
+
+                    source.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    source.start();
+                    errorLog.textContent = ""; 
+
+                } catch (err) {
+                    errorLog.textContent = "音声再生エラー: " + err.message;
+                }
+            };
+        };
+    </script>
+</body>
+</html>
