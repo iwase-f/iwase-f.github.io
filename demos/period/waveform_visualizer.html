@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音の波形ビジュアライザー（遅延停止付き）</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        canvas {
+            background-color: #000000;
+            border: 2px solid #444;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 800px;
+            height: 300px;
+        }
+        .controls {
+            margin-top: 25px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.2s ease, opacity 0.2s;
+        }
+        #startButton {
+            background-color: #007acc;
+            color: white;
+        }
+        #startButton:hover { background-color: #005f9e; }
+        
+        #pauseButton {
+            background-color: #ff9800;
+            color: white;
+        }
+        #pauseButton:hover:not(:disabled) { background-color: #e68a00; }
+        
+        #delayPauseButton {
+            background-color: #9c27b0;
+            color: white;
+        }
+        #delayPauseButton:hover:not(:disabled) { background-color: #7b1fa2; }
+
+        button:disabled {
+            background-color: #555 !important;
+            color: #888 !important;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #aaaaaa;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>音の波形ビジュアライザー</h2>
+    <canvas id="oscilloscope"></canvas>
+    
+    <div class="controls">
+        <button id="startButton">マイクを有効にして開始</button>
+        <button id="pauseButton" disabled>一時停止 (Spaceキー)</button>
+        <button id="delayPauseButton" disabled>1秒後に停止</button>
+    </div>
+    <div id="status">ボタンを押してマイクへのアクセスを許可してください。</div>
+
+    <script>
+        let audioCtx;
+        let analyser;
+        let source;
+        let isPaused = false;
+
+        const canvas = document.getElementById('oscilloscope');
+        const canvasCtx = canvas.getContext('2d');
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const delayPauseButton = document.getElementById('delayPauseButton');
+        const statusDiv = document.getElementById('status');
+
+        canvas.width = 800;
+        canvas.height = 300;
+
+        // --- 一時停止のON/OFF状態を切り替えてUIを更新する関数 ---
+        function setPauseState(paused) {
+            isPaused = paused;
+            if (isPaused) {
+                pauseButton.textContent = '再生再開 (Spaceキー)';
+                pauseButton.style.backgroundColor = '#4CAF50'; // 緑色に変更
+                statusDiv.textContent = "波形を固定しました。";
+            } else {
+                pauseButton.textContent = '一時停止 (Spaceキー)';
+                pauseButton.style.backgroundColor = '#ff9800'; // 元のオレンジ色
+                statusDiv.textContent = "リアルタイム波形を表示中... ";
+            }
+        }
+
+        // --- 通常の一時停止ボタン ---
+        pauseButton.addEventListener('click', () => {
+            setPauseState(!isPaused);
+        });
+
+        // --- 1秒後に停止するボタンの処理 ---
+        delayPauseButton.addEventListener('click', () => {
+            // すでに停止中の場合は、一旦再生状態に戻す
+            if (isPaused) {
+                setPauseState(false);
+            }
+
+            // カウントダウン中のUI変更
+            delayPauseButton.disabled = true;
+            delayPauseButton.textContent = '⏱ 停止まであと1秒...';
+            statusDiv.textContent = "1秒後に波形を固定します。";
+            statusDiv.style.color = '#ff9800';
+
+            // 1000ミリ秒（1秒）後に停止処理を実行
+            setTimeout(() => {
+                setPauseState(true); // 停止
+                delayPauseButton.disabled = false; // ボタンを再度押せるようにする
+                delayPauseButton.textContent = '1秒後に停止'; // ボタンのテキストを戻す
+                statusDiv.style.color = '#4CAF50';
+            }, 1000);
+        });
+
+        // スペースキーでの操作
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'Space' && !pauseButton.disabled) {
+                event.preventDefault();
+                setPauseState(!isPaused);
+            }
+        });
+
+        startButton.addEventListener('click', async () => {
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                source = audioCtx.createMediaStreamSource(stream);
+                source.connect(analyser);
+                
+                analyser.fftSize = 2048;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+
+                statusDiv.textContent = "リアルタイム波形を表示中... ";
+                statusDiv.style.color = '#4CAF50';
+                
+                startButton.style.display = 'none';
+                pauseButton.disabled = false;
+                delayPauseButton.disabled = false;
+
+                function draw() {
+                    requestAnimationFrame(draw);
+
+                    if (isPaused) {
+                        return;
+                    }
+
+                    analyser.getByteTimeDomainData(dataArray);
+
+                    canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+                    canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+                    canvasCtx.lineWidth = 2;
+                    canvasCtx.strokeStyle = 'rgb(0, 255, 128)';
+                    canvasCtx.beginPath();
+
+                    const sliceWidth = canvas.width * 1.0 / bufferLength;
+                    let x = 0;
+
+                    for (let i = 0; i < bufferLength; i++) {
+                        const v = dataArray[i] / 128.0;
+                        const y = v * canvas.height / 2;
+
+                        if (i === 0) {
+                            canvasCtx.moveTo(x, y);
+                        } else {
+                            canvasCtx.lineTo(x, y);
+                        }
+                        x += sliceWidth;
+                    }
+
+                    canvasCtx.lineTo(canvas.width, canvas.height / 2);
+                    canvasCtx.stroke();
+                }
+
+                draw();
+
+            } catch (err) {
+                console.error('マイクアクセスエラー:', err);
+                statusDiv.textContent = 'エラー: マイクへのアクセスが拒否されたか、デバイスが見つかりません。';
+                statusDiv.style.color = '#ff5555';
+            }
+        });
+    </script>
+</body>
+</html>

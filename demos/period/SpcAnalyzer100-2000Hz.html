@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>リアルタイム周波数スペクトル (100Hz-2000Hz)</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 600px;
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+        .control-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+        }
+        label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+        }
+        .canvas-container {
+            width: 100%;
+            max-width: 600px;
+            position: relative;
+        }
+        canvas {
+            width: 100%;
+            height: 300px;
+            background-color: #000000;
+            border: 1px solid #333;
+            border-radius: 8px;
+            display: block;
+        }
+        #errorMessage {
+            color: #ff4444;
+            margin-top: 10px;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>周波数スペクトル (100Hz - 2000Hz)</h1>
+
+    <div class="controls">
+        <div class="control-group">
+            <button id="startBtn">マイク開始</button>
+            <button id="stopBtn" disabled>停止</button>
+        </div>
+        <div class="control-group">
+            <span>X軸スケール:</span>
+            <label><input type="radio" name="scale" value="linear" checked> 線形</label>
+            <label><input type="radio" name="scale" value="log"> 対数</label>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <canvas id="spectrumCanvas" width="1200" height="600"></canvas>
+    </div>
+    
+    <div id="errorMessage"></div>
+
+    <script>
+        let audioContext;
+        let analyser;
+        let microphone;
+        let animationId;
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const scaleRadios = document.getElementsByName('scale');
+        const canvas = document.getElementById('spectrumCanvas');
+        const ctx = canvas.getContext('2d');
+        const errorMessage = document.getElementById('errorMessage');
+
+        // 表示する周波数の範囲を設定
+        const MIN_DISPLAY_FREQ = 100;
+        const MAX_DISPLAY_FREQ = 2000;
+
+        // キャンバスの初期化
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        async function startAudio() {
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioContext = new AudioContext();
+
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                
+                microphone = audioContext.createMediaStreamSource(stream);
+                analyser = audioContext.createAnalyser();
+
+                // 狭い範囲を詳細に見るため、FFTサイズを大きめに設定して解像度を上げます
+                analyser.fftSize = 8192; 
+                analyser.smoothingTimeConstant = 0.85; 
+
+                microphone.connect(analyser);
+
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                errorMessage.textContent = '';
+
+                draw();
+            } catch (err) {
+                console.error('マイクのアクセスに失敗しました:', err);
+                errorMessage.textContent = 'マイクへのアクセスが拒否されたか、エラーが発生しました。';
+            }
+        }
+
+        function stopAudio() {
+            if (audioContext) {
+                audioContext.close();
+                cancelAnimationFrame(animationId);
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+        }
+
+        function draw() {
+            animationId = requestAnimationFrame(draw);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            analyser.getByteFrequencyData(dataArray);
+
+            ctx.fillStyle = 'rgb(0, 0, 0)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let scaleType = 'linear';
+            for (const radio of scaleRadios) {
+                if (radio.checked) {
+                    scaleType = radio.value;
+                    break;
+                }
+            }
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgb(0, 255, 128)';
+            ctx.beginPath();
+
+            const maxNyquistFreq = audioContext.sampleRate / 2;
+            const logMin = Math.log10(MIN_DISPLAY_FREQ);
+            const logMax = Math.log10(MAX_DISPLAY_FREQ);
+
+            let isFirstPoint = true;
+
+            for (let i = 0; i < bufferLength; i++) {
+                const freq = i * maxNyquistFreq / bufferLength;
+
+                // 100Hz〜2000Hzの範囲外は描画をスキップ
+                if (freq < MIN_DISPLAY_FREQ || freq > MAX_DISPLAY_FREQ) continue;
+
+                const value = dataArray[i];
+                const percent = value / 255;
+                const y = canvas.height - (canvas.height * percent);
+                let x = 0;
+
+                if (scaleType === 'linear') {
+                    // 100Hzがx=0、2000Hzがx=canvas.widthになるようにマッピング
+                    x = ((freq - MIN_DISPLAY_FREQ) / (MAX_DISPLAY_FREQ - MIN_DISPLAY_FREQ)) * canvas.width;
+                } else {
+                    // 対数スケールのマッピング
+                    const logFreq = Math.log10(freq);
+                    x = ((logFreq - logMin) / (logMax - logMin)) * canvas.width;
+                }
+
+                if (isFirstPoint) {
+                    ctx.moveTo(x, y);
+                    isFirstPoint = false;
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+
+            ctx.stroke();
+            
+            drawGrid(scaleType, logMin, logMax);
+        }
+
+        function drawGrid(scaleType, logMin, logMax) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+
+            const drawLabel = (freq, label) => {
+                let x = 0;
+                if (scaleType === 'linear') {
+                    x = ((freq - MIN_DISPLAY_FREQ) / (MAX_DISPLAY_FREQ - MIN_DISPLAY_FREQ)) * canvas.width;
+                } else {
+                    x = ((Math.log10(freq) - logMin) / (logMax - logMin)) * canvas.width;
+                }
+                
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+                
+                ctx.fillText(label, x, canvas.height - 10);
+            };
+
+            // スケールに合わせて見やすいグリッド線を引く
+            if (scaleType === 'linear') {
+                const linearLabels = [100, 500, 1000, 1500, 2000];
+                for (const freq of linearLabels) {
+                    drawLabel(freq, freq + 'Hz');
+                }
+            } else {
+                const logLabels = [100, 200, 500, 1000, 2000];
+                for (const freq of logLabels) {
+                    drawLabel(freq, freq + 'Hz');
+                }
+            }
+        }
+
+        startBtn.addEventListener('click', startAudio);
+        stopBtn.addEventListener('click', stopAudio);
+    </script>
+</body>
+</html>
