@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>フィボナッチ螺旋</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f5f5f7;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        #controls {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-end; 
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 300px;
+        }
+        label {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type=range] {
+            width: 100%;
+        }
+        #spiralToggleBtn {
+            background-color: #2c3e50;
+            color: #f5f5f7;
+            border: none;
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.1s, background-color 0.2s;
+            box-shadow: 0 2px 8px rgba(44, 62, 80, 0.3);
+            height: 40px; 
+        }
+        #spiralToggleBtn:hover {
+            background-color: #34495e;
+        }
+        #spiralToggleBtn:active {
+            transform: scale(0.95);
+        }
+        canvas {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <h2>フィボナッチ螺旋</h2>
+
+    <div id="controls">
+        <div class="control-group">
+            <label for="stepSlider">ステップ数（配置する正方形の数）: <span id="stepValue">1</span></label>
+            <input type="range" id="stepSlider" min="1" max="40" step="1" value="1">
+        </div>
+        
+        <button id="spiralToggleBtn">螺旋を非表示</button>
+    </div>
+
+    <canvas id="fibCanvas" width="800" height="600">
+        お使いのブラウザはCanvasをサポートしていません。
+    </canvas>
+
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('fibCanvas');
+            if (!canvas || !canvas.getContext) return;
+            const ctx = canvas.getContext('2d');
+            const stepSlider = document.getElementById('stepSlider');
+            const stepValue = document.getElementById('stepValue');
+            const spiralToggleBtn = document.getElementById('spiralToggleBtn'); 
+
+            const MAX_STEPS = 40;
+            let showSpiral = true; 
+
+            const squareColors = [];
+            for (let i = 0; i < MAX_STEPS; i++) {
+                const hue = Math.floor(Math.random() * 360);
+                squareColors.push(`hsl(${hue}, 70%, 85%)`);
+            }
+
+            function drawFibonacci() {
+                const steps = parseInt(stepSlider.value);
+                stepValue.textContent = steps;
+                
+                spiralToggleBtn.textContent = showSpiral ? '螺旋を非表示' : '螺旋を表示';
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                let f = [1, 1];
+                for(let i = 2; i < steps; i++) {
+                    f.push(f[i-1] + f[i-2]);
+                }
+
+                let squares = [];
+                let bx_min = 0, bx_max = 1, by_min = 0, by_max = 1;
+                
+                squares.push({x: 0, y: 0, size: 1, dir: 3}); 
+
+                for(let i = 1; i < steps; i++) {
+                    let size = f[i];
+                    let dir = (i - 1) % 4; 
+                    let x = 0, y = 0;
+
+                    if (dir === 0) { x = bx_max; y = by_min; bx_max += size; }
+                    else if (dir === 1) { x = bx_max - size; y = by_min - size; by_min -= size; }
+                    else if (dir === 2) { x = bx_min - size; y = by_max - size; bx_min -= size; }
+                    else if (dir === 3) { x = bx_min; y = by_max; by_max += size; }
+
+                    squares.push({x: x, y: y, size: size, dir: dir});
+                }
+
+                const totalWidth = bx_max - bx_min;
+                const totalHeight = by_max - by_min;
+                const modelCenterX = (bx_min + bx_max) / 2;
+                const modelCenterY = (by_min + by_max) / 2;
+                const viewCenterX = canvas.width / 2;
+                const viewCenterY = canvas.height / 2;
+                
+                // 変更点：ステップが1や2など、要素が非常に小さい時に
+                // ズームインしすぎて画面いっぱいに描画されるのを防ぐため、最大スケールを制限
+                let scale = Math.min(canvas.width / totalWidth, canvas.height / totalHeight) * 0.9;
+                if (scale > 100) scale = 100; // 1辺が大きくなりすぎないように制限
+
+                const toPixelX = (x) => (x - modelCenterX) * scale + viewCenterX;
+                const toPixelY = (y) => (y - modelCenterY) * scale + viewCenterY;
+                const toPixelSize = (s) => s * scale;
+
+                for(let i = 0; i < steps; i++) {
+                    let sq = squares[i];
+                    
+                    let px = toPixelX(sq.x);
+                    let py = toPixelY(sq.y);
+                    let pSize = toPixelSize(sq.size);
+
+                    ctx.fillStyle = squareColors[i];
+                    ctx.fillRect(px, py, pSize, pSize);
+
+                    ctx.strokeStyle = '#999999';
+                    ctx.lineWidth = 1; 
+                    ctx.strokeRect(px, py, pSize, pSize);
+
+                    if (showSpiral) {
+                        ctx.beginPath();
+                        ctx.strokeStyle = '#2c3e50';
+                        ctx.lineWidth = 2.5; 
+                        
+                        let pcx, pcy, startA, endA;
+                        let pSizeArc = pSize; 
+
+                        if (sq.dir === 3)      { pcx = toPixelX(sq.x + sq.size); pcy = toPixelY(sq.y);           startA = Math.PI;    endA = Math.PI/2; } 
+                        else if (sq.dir === 0) { pcx = toPixelX(sq.x);           pcy = toPixelY(sq.y);           startA = Math.PI/2;  endA = 0;         } 
+                        else if (sq.dir === 1) { pcx = toPixelX(sq.x);           pcy = toPixelY(sq.y + sq.size); startA = 0;          endA = -Math.PI/2;} 
+                        else if (sq.dir === 2) { pcx = toPixelX(sq.x + sq.size); pcy = toPixelY(sq.y + sq.size); startA = -Math.PI/2; endA = Math.PI;   } 
+
+                        ctx.arc(pcx, pcy, pSizeArc, startA, endA, true); 
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            spiralToggleBtn.addEventListener('click', () => {
+                showSpiral = !showSpiral; 
+                drawFibonacci(); 
+            });
+
+            stepSlider.addEventListener('input', drawFibonacci);
+            drawFibonacci(); 
+        });
+    </script>
+</body>
+</html>

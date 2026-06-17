@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>フラクタルツリー</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f5f5f7;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        /* コントロールパネルの装飾 */
+        #controls {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 180px;
+        }
+        label {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 8px;
+            font-weight: bold;
+        }
+        input[type=range] {
+            width: 100%;
+        }
+        canvas {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <h2>小さなルールが構造を作る：フラクタルツリー</h2>
+
+    <div id="controls">
+        <div class="control-group">
+            <label for="depthSlider">枝分かれの回数: <span id="depthValue">10</span></label>
+            <input type="range" id="depthSlider" min="1" max="12" step="1" value="10">
+        </div>
+        <div class="control-group">
+            <label for="angleSlider">分岐角度 (度): <span id="angleValue">30</span>°</label>
+            <input type="range" id="angleSlider" min="0" max="90" step="1" value="30">
+        </div>
+        <div class="control-group">
+            <label for="shrinkSlider">枝の縮小率: <span id="shrinkValue">0.75</span></label>
+            <input type="range" id="shrinkSlider" min="0.5" max="0.9" step="0.01" value="0.75">
+        </div>
+    </div>
+
+    <canvas id="treeCanvas" width="800" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('treeCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // HTMLのスライダー要素を取得
+        const depthSlider = document.getElementById('depthSlider');
+        const angleSlider = document.getElementById('angleSlider');
+        const shrinkSlider = document.getElementById('shrinkSlider');
+
+        // 数値表示用の要素を取得
+        const depthValue = document.getElementById('depthValue');
+        const angleValue = document.getElementById('angleValue');
+        const shrinkValue = document.getElementById('shrinkValue');
+
+        // 固定のパラメータ
+        const startX = canvas.width / 2;
+        const startY = canvas.height;
+        const initialLength = 150;
+        const initialAngle = -Math.PI / 2; // 真上を向く角度
+
+        /**
+         * 枝を描画する再帰関数
+         */
+        function drawBranch(x, y, length, angle, depth, branchShrink, branchAngle) {
+            if (depth === 0) return;
+
+            const endX = x + length * Math.cos(angle);
+            const endY = y + length * Math.sin(angle);
+
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(endX, endY);
+            ctx.lineWidth = depth * 0.8; 
+            ctx.strokeStyle = depth < 3 ? '#2e8b57' : '#5c4033';
+            ctx.stroke();
+
+            // 取得したパラメータを使って、次の枝を描画
+            drawBranch(endX, endY, length * branchShrink, angle + branchAngle, depth - 1, branchShrink, branchAngle);
+            drawBranch(endX, endY, length * branchShrink, angle - branchAngle, depth - 1, branchShrink, branchAngle);
+        }
+
+        /**
+         * 画面をリセットして木全体を描き直す関数
+         */
+        function drawTree() {
+            // キャンバスを白紙に戻す
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // スライダーから現在の値を取得
+            const currentDepth = parseInt(depthSlider.value);
+            const currentShrink = parseFloat(shrinkSlider.value);
+            // 角度は「度」から、計算用の「ラジアン」に変換する
+            const currentAngle = parseInt(angleSlider.value) * (Math.PI / 180);
+
+            // 画面上の数値表示を更新
+            depthValue.textContent = currentDepth;
+            angleValue.textContent = angleSlider.value;
+            shrinkValue.textContent = currentShrink.toFixed(2);
+
+            // 取得した値を使って描画を開始
+            drawBranch(startX, startY, initialLength, initialAngle, currentDepth, currentShrink, currentAngle);
+        }
+
+        // スライダーが動かされたら（'input'イベント）、drawTree関数を実行するよう設定
+        depthSlider.addEventListener('input', drawTree);
+        angleSlider.addEventListener('input', drawTree);
+        shrinkSlider.addEventListener('input', drawTree);
+
+        // ページを読み込んだ時の最初の1回を描画
+        drawTree();
+    </script>
+
+</body>
+</html>
