@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Lorenz Attractor 3D Simulation</title>
+    <style>
+        /* 画面全体のレイアウト（縦並びのFlexbox） */
+        body { 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            background-color: #111; 
+            color: #eee; 
+            font-family: sans-serif; 
+            overflow: hidden; 
+        }
+        
+        /* 上部UIパネル */
+        #ui-panel {
+            background: #1a1a1a;
+            padding: 15px 20px;
+            border-bottom: 1px solid #333;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            z-index: 10;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+        }
+
+        /* 微分方程式の表示エリア */
+        .equations {
+            background: #000;
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            font-family: "Courier New", Courier, monospace;
+            font-size: 16px;
+            color: #4CAF50;
+            white-space: nowrap;
+        }
+        .equations p { margin: 4px 0; }
+        .equations span { color: #fff; }
+
+        /* コントロール・スライダー群 */
+        .controls-wrapper {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+            flex-grow: 1;
+        }
+        .control-group { 
+            display: flex; 
+            flex-direction: column; 
+            width: 180px; 
+        }
+        label { font-size: 13px; margin-bottom: 5px; color: #ccc; }
+        input[type="range"] { cursor: pointer; }
+        .val-display { float: right; font-weight: bold; color: #4CAF50; }
+        
+        .btn-container { 
+            display: flex; 
+            gap: 10px; 
+            margin-left: auto;
+        }
+        button {
+            padding: 10px 20px; font-size: 14px; font-weight: bold;
+            color: white; border: none; border-radius: 4px; cursor: pointer; transition: 0.2s;
+        }
+        #btn-play { background: #2196F3; }
+        #btn-play:hover { background: #1976D2; }
+        #btn-reset { background: #f44336; }
+        #btn-reset:hover { background: #d32f2f; }
+
+        /* 3Dキャンバス領域（残りの高さをすべて埋める） */
+        #canvas-container {
+            flex-grow: 1;
+            width: 100%;
+            position: relative;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <div id="ui-panel">
+        <div class="equations">
+            <p>dx/dt = <span>&sigma;(y - x)</span></p>
+            <p>dy/dt = <span>x(&rho; - z) - y</span></p>
+            <p>dz/dt = <span>xy - &beta;z</span></p>
+        </div>
+
+        <div class="controls-wrapper">
+            <div class="control-group">
+                <label>シグマ (&sigma;) <span id="val-sigma" class="val-display">10.0</span></label>
+                <input type="range" id="slider-sigma" min="0" max="20" step="0.1" value="10">
+            </div>
+            <div class="control-group">
+                <label>レイリー数 (&rho;) <span id="val-rho" class="val-display">28.0</span></label>
+                <input type="range" id="slider-rho" min="0" max="50" step="0.1" value="28">
+            </div>
+            <div class="control-group">
+                <label>ベータ (&beta;) <span id="val-beta" class="val-display">2.67</span></label>
+                <input type="range" id="slider-beta" min="0" max="5" step="0.01" value="2.667">
+            </div>
+        </div>
+
+        <div class="btn-container">
+            <button id="btn-play">一時停止</button>
+            <button id="btn-reset">リセット</button>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+        // --- 1. 初期設定 ---
+        const MAX_POINTS = 10000;
+        let pointsCount = 0;
+        let isPlaying = true;
+
+        let sigma = 10.0;
+        let rho = 28.0;
+        let beta = 8.0 / 3.0; // 約2.667
+        const dt = 0.01;
+
+        let x = 0.1, y = 0.0, z = 0.0;
+
+        // --- 2. Three.js のシーン構築 ---
+        const container = document.getElementById('canvas-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x111111, 0.005);
+
+        const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+        camera.position.set(0, 0, 80);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 0, 25);
+
+        // --- 3. 軌跡のジオメトリ設定 ---
+        const positions = new Float32Array(MAX_POINTS * 3);
+        const colors = new Float32Array(MAX_POINTS * 3);
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        geometry.setDrawRange(0, 0);
+
+        const material = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2, blending: THREE.AdditiveBlending });
+        const line = new THREE.Line(geometry, material);
+        scene.add(line);
+
+        // --- 4. 計算と描画のループ ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isPlaying) {
+                let dx = sigma * (y - x) * dt;
+                let dy = (x * (rho - z) - y) * dt;
+                let dz = (x * y - beta * z) * dt;
+
+                x += dx;
+                y += dy;
+                z += dz;
+
+                if (pointsCount < MAX_POINTS) {
+                    const idx = pointsCount * 3;
+                    positions[idx] = x;
+                    positions[idx + 1] = y;
+                    positions[idx + 2] = z;
+
+                    colors[idx] = Math.abs(x) / 25 + 0.3;
+                    colors[idx + 1] = Math.abs(y) / 25 + 0.3;
+                    colors[idx + 2] = z / 50 + 0.2;
+
+                    pointsCount++;
+                    geometry.setDrawRange(0, pointsCount);
+                } else {
+                    positions.copyWithin(0, 3);
+                    colors.copyWithin(0, 3);
+
+                    const lastIdx = (MAX_POINTS - 1) * 3;
+                    positions[lastIdx] = x;
+                    positions[lastIdx + 1] = y;
+                    positions[lastIdx + 2] = z;
+
+                    colors[lastIdx] = Math.abs(x) / 25 + 0.3;
+                    colors[lastIdx + 1] = Math.abs(y) / 25 + 0.3;
+                    colors[lastIdx + 2] = z / 50 + 0.2;
+                }
+
+                geometry.attributes.position.needsUpdate = true;
+                geometry.attributes.color.needsUpdate = true;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // --- 5. UI イベントの処理 ---
+        const updateParams = () => {
+            sigma = parseFloat(document.getElementById('slider-sigma').value);
+            rho = parseFloat(document.getElementById('slider-rho').value);
+            beta = parseFloat(document.getElementById('slider-beta').value);
+            
+            document.getElementById('val-sigma').innerText = sigma.toFixed(1);
+            document.getElementById('val-rho').innerText = rho.toFixed(1);
+            document.getElementById('val-beta').innerText = beta.toFixed(2);
+        };
+
+        document.getElementById('slider-sigma').addEventListener('input', updateParams);
+        document.getElementById('slider-rho').addEventListener('input', updateParams);
+        document.getElementById('slider-beta').addEventListener('input', updateParams);
+
+        document.getElementById('btn-play').addEventListener('click', (e) => {
+            isPlaying = !isPlaying;
+            e.target.innerText = isPlaying ? "一時停止" : "再生";
+            e.target.style.background = isPlaying ? "#2196F3" : "#4CAF50";
+        });
+
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            x = 0.1; y = 0.0; z = 0.0;
+            pointsCount = 0;
+            geometry.setDrawRange(0, 0);
+            if (!isPlaying) document.getElementById('btn-play').click();
+        });
+
+        // ウィンドウリサイズ対応（コンテナのサイズに合わせる）
+        window.addEventListener('resize', () => {
+            const newWidth = container.clientWidth;
+            const newHeight = container.clientHeight;
+            camera.aspect = newWidth / newHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(newWidth, newHeight);
+        });
+    </script>
+</body>
+</html>
