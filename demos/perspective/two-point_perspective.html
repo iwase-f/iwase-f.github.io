@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二点透視図法シミュレーター</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1000px;
+            width: 100%;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .control-group label {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fafafa;
+            width: 100%;
+            height: auto;
+            max-height: 600px;
+            overflow: hidden;
+        }
+        .description {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+        }
+        .value-display {
+            font-size: 12px;
+            color: #007bff;
+            font-weight: normal;
+            margin-left: 5px;
+        }
+        .notice {
+            color: #d63031;
+            font-weight: bold;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <h2>二点透視図法シミュレーター</h2>
+    
+    <div class="description">
+        このシミュレーターは、実際の3D座標を数学的（透視投影変換）に2D画面に落とし込んでいます。<br>
+        箱を回転させたり、視野角や<strong>アイレベル</strong>を変えたりすると、<strong style="color:#d63031;">消失点の位置は自動的に計算されて移動します。</strong><br>
+        いくら消失点を近づけても、箱の体積感や形が破綻しない（潰れない）ことを確認してください。
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="horizon">
+                アイレベルの高さ
+                <span id="valHorizon" class="value-display">50%</span>
+            </label>
+            <input type="range" id="horizon" min="0" max="100" value="50">
+        </div>
+        <div class="control-group">
+            <label for="yaw">
+                箱の回転角度 (Yaw)
+                <span id="valYaw" class="value-display">40°</span>
+            </label>
+            <input type="range" id="yaw" min="-85" max="85" value="40">
+        </div>
+        <div class="control-group">
+            <label for="fov">
+                視野角 / パースの強さ
+                <span id="valFov" class="value-display">600</span>
+            </label>
+            <input type="range" id="fov" min="200" max="1500" value="600">
+            <span class="notice">※小さいほど広角（歪む）、大きいほど望遠（平坦）</span>
+        </div>
+        <div class="control-group">
+            <label for="boxY">
+                箱の上下位置
+                <span id="valBoxY" class="value-display">100</span>
+            </label>
+            <input type="range" id="boxY" min="-250" max="250" value="100">
+        </div>
+        <div class="control-group">
+            <label for="boxZ">
+                カメラからの距離
+                <span id="valBoxZ" class="value-display">400</span>
+            </label>
+            <input type="range" id="boxZ" min="150" max="1000" value="400">
+        </div>
+    </div>
+
+    <canvas id="perspectiveCanvas" width="800" height="500"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('perspectiveCanvas');
+    const ctx = canvas.getContext('2d');
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+
+    // UI要素の取得
+    const sliderHorizon = document.getElementById('horizon');
+    const sliderYaw = document.getElementById('yaw');
+    const sliderFov = document.getElementById('fov');
+    const sliderBoxY = document.getElementById('boxY');
+    const sliderBoxZ = document.getElementById('boxZ');
+
+    const valHorizon = document.getElementById('valHorizon');
+    const valYaw = document.getElementById('valYaw');
+    const valFov = document.getElementById('valFov');
+    const valBoxY = document.getElementById('valBoxY');
+    const valBoxZ = document.getElementById('valBoxZ');
+
+    const state = {
+        horizon: 50,  // 画面におけるアイレベルの高さ (%)
+        yaw: 40,      // 度数法
+        fov: 600,     // 投影面までの距離(d)に相当
+        boxY: 100,    // 3D空間でのY座標
+        boxZ: 400     // 3D空間でのZ座標
+    };
+
+    // 箱の3D定義 (1辺の長さ100、中心が原点)
+    const s = 50;
+    const vertices = [
+        { x: -s, y: -s, z:  s }, // 0: 左上奥 (Zをプラスに修正済み)
+        { x:  s, y: -s, z:  s }, // 1: 右上奥
+        { x:  s, y:  s, z:  s }, // 2: 右下奥
+        { x: -s, y:  s, z:  s }, // 3: 左下奥
+        { x: -s, y: -s, z: -s }, // 4: 左上手前 (Zをマイナスに修正済み)
+        { x:  s, y: -s, z: -s }, // 5: 右上手前
+        { x:  s, y:  s, z: -s }, // 6: 右下手前
+        { x: -s, y:  s, z: -s }  // 7: 左下手前
+    ];
+
+    // 面の定義（頂点インデックスと色）
+    const faces = [
+        { indices: [4, 5, 6, 7], color: '#4bcffa', stroke: '#0984e3', name: 'Front' },
+        { indices: [1, 0, 3, 2], color: '#4b6584', stroke: '#2d3436', name: 'Back' },
+        { indices: [0, 4, 7, 3], color: '#778ca3', stroke: '#4b6584', name: 'Left' },
+        { indices: [5, 1, 2, 6], color: '#0984e3', stroke: '#0652dd', name: 'Right' },
+        { indices: [0, 1, 5, 4], color: '#d1d8e0', stroke: '#a5b1c2', name: 'Top' },
+        { indices: [7, 6, 2, 3], color: '#a5b1c2', stroke: '#778ca3', name: 'Bottom' }
+    ];
+
+    function setupListeners() {
+        const inputs = [
+            { id: 'horizon', prop: 'horizon', label: valHorizon, suffix: '%' },
+            { id: 'yaw', prop: 'yaw', label: valYaw, suffix: '°' },
+            { id: 'fov', prop: 'fov', label: valFov, suffix: '' },
+            { id: 'boxY', prop: 'boxY', label: valBoxY, suffix: '' },
+            { id: 'boxZ', prop: 'boxZ', label: valBoxZ, suffix: '' }
+        ];
+
+        inputs.forEach(input => {
+            const element = document.getElementById(input.id);
+            element.addEventListener('input', (e) => {
+                state[input.prop] = parseFloat(e.target.value);
+                input.label.textContent = state[input.prop] + input.suffix;
+                draw();
+            });
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // アイレベル(消失点のY座標)を計算
+        const horizonY = canvas.height * (state.horizon / 100);
+
+        // ラジアン変換
+        const theta = state.yaw * Math.PI / 180;
+        const cosT = Math.cos(theta);
+        const sinT = Math.sin(theta);
+
+        // 1. 3D座標の回転と平行移動
+        const projectedVertices = vertices.map(v => {
+            // Y軸回転
+            const rx = v.x * cosT + v.z * sinT;
+            const rz = -v.x * sinT + v.z * cosT;
+            const ry = v.y;
+
+            // 平行移動 (ワールド座標へ)
+            const wx = rx;
+            const wy = ry + state.boxY;
+            const wz = rz + state.boxZ;
+
+            // 2Dスクリーン投影
+            const scale = state.fov / wz;
+            const sx = wx * scale + cx; 
+            const sy = wy * scale + horizonY; // 投影中心のY軸をアイレベルに合わせる
+
+            return { x: sx, y: sy, z: wz, wx, wy };
+        });
+
+        // 2. 消失点の計算 (無限遠の点がスクリーン上のどこに落ちるか)
+        let vpZ_x = null;
+        if (cosT !== 0) {
+            vpZ_x = (sinT / cosT) * state.fov + cx;
+        }
+
+        let vpX_x = null;
+        if (sinT !== 0) {
+            vpX_x = (cosT / -sinT) * state.fov + cx;
+        }
+
+        // 3. 描画
+        drawHorizon(horizonY);
+
+        // 消失点の描画（画面外に遠すぎる場合は描画しない）
+        if (vpZ_x !== null && Math.abs(vpZ_x - cx) < 3000) {
+            drawVanishingPoint(vpZ_x, horizonY, '消失点1(青/奥行き)', '#0984e3');
+        }
+        if (vpX_x !== null && Math.abs(vpX_x - cx) < 3000) {
+            drawVanishingPoint(vpX_x, horizonY, '消失点2(赤/横幅)', '#dc3545');
+        }
+
+        // パース線(ガイドライン)の描画
+        drawGuideLines(projectedVertices, vpZ_x, vpX_x, horizonY);
+
+        // 面の描画 (Zソート：奥から手前へ描画)
+        const sortedFaces = faces.map(face => {
+            const zSum = face.indices.reduce((sum, idx) => sum + projectedVertices[idx].z, 0);
+            return {
+                ...face,
+                centerZ: zSum / 4,
+                projPts: face.indices.map(idx => projectedVertices[idx])
+            };
+        }).sort((a, b) => b.centerZ - a.centerZ); 
+
+        // 描画実行
+        sortedFaces.forEach(face => {
+            if (!isFaceVisible(face.projPts)) return;
+            drawPolygon(face.projPts, face.color, face.stroke);
+        });
+    }
+
+    // ポリゴンが表を向いているか(時計回り/反時計回り)を外積で判定
+    function isFaceVisible(pts) {
+        const vec1 = { x: pts[1].x - pts[0].x, y: pts[1].y - pts[0].y };
+        const vec2 = { x: pts[2].x - pts[1].x, y: pts[2].y - pts[1].y };
+        return (vec1.x * vec2.y - vec1.y * vec2.x) > 0;
+    }
+
+    function drawHorizon(y) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.strokeStyle = '#2d3436';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        
+        ctx.fillStyle = '#2d3436';
+        ctx.font = '14px sans-serif';
+        // テキストの背景を少し白くする
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillRect(5, y - 22, 140, 20);
+        ctx.fillStyle = '#2d3436';
+        ctx.fillText('アイレベル (水平線)', 10, y - 6);
+    }
+
+    function drawVanishingPoint(x, y, label, color) {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        
+        ctx.fillStyle = color;
+        ctx.font = '12px sans-serif';
+        ctx.textAlign = 'center';
+        
+        // ラベル背景
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(x - textWidth / 2 - 4, y - 24, textWidth + 8, 16);
+
+        ctx.fillStyle = color;
+        ctx.fillText(label, x, y - 10);
+        ctx.textAlign = 'left';
+    }
+
+    function drawGuideLines(pts, vpZ_x, vpX_x, horizonY) {
+        ctx.lineWidth = 1;
+        
+        // Z方向(奥行き)のパース線
+        if (vpZ_x !== null) {
+            ctx.strokeStyle = 'rgba(9, 132, 227, 0.3)';
+            ctx.beginPath();
+            [4, 5, 6, 7].forEach(idx => {
+                ctx.moveTo(pts[idx].x, pts[idx].y);
+                ctx.lineTo(vpZ_x, horizonY);
+            });
+            ctx.stroke();
+        }
+
+        // X方向(横幅)のパース線
+        if (vpX_x !== null) {
+            ctx.strokeStyle = 'rgba(220, 53, 69, 0.3)';
+            ctx.beginPath();
+            [4, 0, 7, 3].forEach(idx => {
+                ctx.moveTo(pts[idx].x, pts[idx].y);
+                ctx.lineTo(vpX_x, horizonY);
+            });
+            ctx.stroke();
+        }
+    }
+
+    function drawPolygon(points, fillColor, strokeColor) {
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+        }
+        ctx.closePath();
+        
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+        
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+
+    setupListeners();
+    draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>一点透視図法シミュレーター</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: sans-serif;
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-width: 1000px;
+            width: 100%;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .control-group label {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        input[type="range"] {
+            width: 100%;
+        }
+        canvas {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #fafafa;
+            width: 100%;
+            height: auto;
+            max-height: 600px;
+            overflow: hidden;
+        }
+        .description {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+        }
+        .value-display {
+            font-size: 12px;
+            color: #007bff;
+            font-weight: normal;
+            margin-left: 5px;
+        }
+        .notice {
+            color: #d63031;
+            font-weight: bold;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <h2>一点透視図法シミュレーター</h2>
+    
+    <div class="description">
+        箱の正面が画面と完全に平行な状態を保ったまま、上下左右に移動します。<br>
+        箱の形状は実際の3D座標を透視投影変換して描画しているため、端に寄せても形が破綻（潰れるなど）することはありません。<br>
+        一点透視図法では、<strong>カメラの視線の先（アイレベル上の中心）</strong>に消失点が1つだけ存在します。
+    </div>
+
+    <div class="controls">
+        <div class="control-group">
+            <label for="horizon">
+                アイレベルの高さ
+                <span id="valHorizon" class="value-display">50%</span>
+            </label>
+            <input type="range" id="horizon" min="0" max="100" value="50">
+        </div>
+        <div class="control-group">
+            <label for="boxX">
+                箱の左右位置 (X)
+                <span id="valBoxX" class="value-display">150</span>
+            </label>
+            <input type="range" id="boxX" min="-300" max="300" value="150">
+        </div>
+        <div class="control-group">
+            <label for="boxY">
+                箱の上下位置 (Y)
+                <span id="valBoxY" class="value-display">100</span>
+            </label>
+            <input type="range" id="boxY" min="-250" max="250" value="100">
+        </div>
+        <div class="control-group">
+            <label for="fov">
+                視野角 / パースの強さ
+                <span id="valFov" class="value-display">600</span>
+            </label>
+            <input type="range" id="fov" min="200" max="1500" value="600">
+            <span class="notice">※小さいほど広角（歪む）、大きいほど望遠（平坦）</span>
+        </div>
+        <div class="control-group">
+            <label for="boxZ">
+                カメラからの距離 (Z)
+                <span id="valBoxZ" class="value-display">400</span>
+            </label>
+            <input type="range" id="boxZ" min="150" max="1000" value="400">
+        </div>
+    </div>
+
+    <canvas id="perspectiveCanvas" width="800" height="500"></canvas>
+</div>
+
+<script>
+    const canvas = document.getElementById('perspectiveCanvas');
+    const ctx = canvas.getContext('2d');
+    const cx = canvas.width / 2;
+
+    const sliderHorizon = document.getElementById('horizon');
+    const sliderBoxX = document.getElementById('boxX');
+    const sliderBoxY = document.getElementById('boxY');
+    const sliderFov = document.getElementById('fov');
+    const sliderBoxZ = document.getElementById('boxZ');
+
+    const valHorizon = document.getElementById('valHorizon');
+    const valBoxX = document.getElementById('valBoxX');
+    const valBoxY = document.getElementById('valBoxY');
+    const valFov = document.getElementById('valFov');
+    const valBoxZ = document.getElementById('valBoxZ');
+
+    const state = {
+        horizon: 50,  // 画面におけるアイレベルの高さ (%)
+        boxX: 150,    // 3D空間でのX座標
+        boxY: 100,    // 3D空間でのY座標
+        fov: 600,     // 投影面までの距離
+        boxZ: 400     // 3D空間でのZ座標
+    };
+
+    // 箱の3D定義 (1辺の長さ100、中心が原点)
+    const s = 50;
+    const vertices = [
+        { x: -s, y: -s, z:  s }, // 0: 左上奥
+        { x:  s, y: -s, z:  s }, // 1: 右上奥
+        { x:  s, y:  s, z:  s }, // 2: 右下奥
+        { x: -s, y:  s, z:  s }, // 3: 左下奥
+        { x: -s, y: -s, z: -s }, // 4: 左上手前
+        { x:  s, y: -s, z: -s }, // 5: 右上手前
+        { x:  s, y:  s, z: -s }, // 6: 右下手前
+        { x: -s, y:  s, z: -s }  // 7: 左下手前
+    ];
+
+    // 面の定義（頂点インデックスと色）
+    const faces = [
+        { indices: [4, 5, 6, 7], color: '#4bcffa', stroke: '#0984e3', name: 'Front' },
+        { indices: [1, 0, 3, 2], color: '#4b6584', stroke: '#2d3436', name: 'Back' },
+        { indices: [0, 4, 7, 3], color: '#778ca3', stroke: '#4b6584', name: 'Left' },
+        { indices: [5, 1, 2, 6], color: '#0984e3', stroke: '#0652dd', name: 'Right' },
+        { indices: [0, 1, 5, 4], color: '#d1d8e0', stroke: '#a5b1c2', name: 'Top' },
+        { indices: [7, 6, 2, 3], color: '#a5b1c2', stroke: '#778ca3', name: 'Bottom' }
+    ];
+
+    function setupListeners() {
+        const inputs = [
+            { id: 'horizon', prop: 'horizon', label: valHorizon, suffix: '%' },
+            { id: 'boxX', prop: 'boxX', label: valBoxX, suffix: '' },
+            { id: 'boxY', prop: 'boxY', label: valBoxY, suffix: '' },
+            { id: 'fov', prop: 'fov', label: valFov, suffix: '' },
+            { id: 'boxZ', prop: 'boxZ', label: valBoxZ, suffix: '' }
+        ];
+
+        inputs.forEach(input => {
+            const element = document.getElementById(input.id);
+            element.addEventListener('input', (e) => {
+                state[input.prop] = parseFloat(e.target.value);
+                input.label.textContent = state[input.prop] + input.suffix;
+                draw();
+            });
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // アイレベル(消失点のY座標)を計算
+        const horizonY = canvas.height * (state.horizon / 100);
+
+        // 1. 3D座標の平行移動 (一点透視なので回転はなし)
+        const projectedVertices = vertices.map(v => {
+            // 平行移動
+            const wx = v.x + state.boxX;
+            const wy = v.y + state.boxY;
+            const wz = v.z + state.boxZ;
+
+            // 2Dスクリーン投影
+            const scale = state.fov / wz;
+            const sx = wx * scale + cx;
+            const sy = wy * scale + horizonY; // アイレベルを基準に投影
+
+            return { x: sx, y: sy, z: wz };
+        });
+
+        // 2. 描画
+        drawCrosshairs(horizonY); // 画面中心の垂直線とアイレベルを描画
+        
+        // 消失点は常にX軸中心とアイレベルの交点
+        drawVanishingPoint(cx, horizonY, '消失点', '#d63031');
+
+        // パース線(ガイドライン)の描画
+        drawGuideLines(projectedVertices, { x: cx, y: horizonY });
+
+        // 面の描画 (Zソート)
+        const sortedFaces = faces.map(face => {
+            const zSum = face.indices.reduce((sum, idx) => sum + projectedVertices[idx].z, 0);
+            return {
+                ...face,
+                centerZ: zSum / 4,
+                projPts: face.indices.map(idx => projectedVertices[idx])
+            };
+        }).sort((a, b) => b.centerZ - a.centerZ);
+
+        sortedFaces.forEach(face => {
+            if (!isFaceVisible(face.projPts)) return;
+            drawPolygon(face.projPts, face.color, face.stroke);
+        });
+    }
+
+    // ポリゴンが表を向いているか外積で判定 (背面カリング)
+    function isFaceVisible(pts) {
+        const vec1 = { x: pts[1].x - pts[0].x, y: pts[1].y - pts[0].y };
+        const vec2 = { x: pts[2].x - pts[1].x, y: pts[2].y - pts[1].y };
+        return (vec1.x * vec2.y - vec1.y * vec2.x) > 0;
+    }
+
+    function drawCrosshairs(horizonY) {
+        ctx.strokeStyle = '#a4b0be';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+
+        // 水平線 (アイレベル)
+        ctx.beginPath();
+        ctx.moveTo(0, horizonY);
+        ctx.lineTo(canvas.width, horizonY);
+        ctx.stroke();
+
+        // 垂直線
+        ctx.beginPath();
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, canvas.height);
+        ctx.stroke();
+        
+        ctx.setLineDash([]);
+        
+        ctx.fillStyle = '#747d8c';
+        ctx.font = '12px sans-serif';
+        ctx.fillText('アイレベル', 10, horizonY - 10);
+    }
+
+    function drawVanishingPoint(x, y, label, color) {
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+        
+        ctx.fillStyle = color;
+        ctx.font = '14px sans-serif';
+        ctx.fontWeight = 'bold';
+        ctx.textAlign = 'center';
+        
+        // ラベル背景
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.fillRect(x - textWidth / 2 - 4, y - 24, textWidth + 8, 16);
+        
+        ctx.fillStyle = color;
+        ctx.fillText(label, x, y - 12);
+        ctx.textAlign = 'left';
+    }
+
+    function drawGuideLines(pts, vp) {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(214, 48, 49, 0.4)';
+        
+        // Z方向(奥行き) - 手前の面(4,5,6,7)から消失点へ
+        ctx.beginPath();
+        [4, 5, 6, 7].forEach(idx => {
+            ctx.moveTo(pts[idx].x, pts[idx].y);
+            ctx.lineTo(vp.x, vp.y);
+        });
+        ctx.stroke();
+    }
+
+    function drawPolygon(points, fillColor, strokeColor) {
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+        }
+        ctx.closePath();
+        
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+        
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+    }
+
+    setupListeners();
+    draw();
+</script>
+</body>
+</html>
