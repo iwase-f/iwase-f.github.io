@@ -155,8 +155,8 @@
 
         function update() {
             // --- 調整箇所：計算ステップ数を調整 ---
-            // 解像度が上がった分計算が増えたため、FPSを保つためにステップ数を減らす (8 -> 2)
-            for (let step = 0; step < 2; step++) {
+            // 解像度が上がった分計算が増えたため、FPSを保つためにステップ数を減らす (8 -> 4)
+            for (let step = 0; step < 4; step++) {
                 for (let y = 1; y < height - 1; y++) {
                     for (let x = 1; x < width - 1; x++) {
                         const idx = y * width + x;
