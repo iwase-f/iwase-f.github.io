@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ボイドモデル（鳥の群れ）</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #eeeeee;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            text-align: center;
+        }
+        canvas {
+            background-color: #1a2a3a;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 350px;
+            aspect-ratio: 1 / 1;
+            margin-bottom: 20px;
+        }
+        .controls {
+            width: 100%;
+            max-width: 350px;
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+        .control-group {
+            margin-bottom: 12px;
+        }
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 15px;
+            border-radius: 5px;
+            background: #444;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #00bcd4;
+            cursor: pointer;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            margin-top: 5px;
+            font-size: 1rem;
+            background-color: #00bcd4;
+            color: #000;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:active {
+            background-color: #0097a7;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>ボイドモデル（群れのシミュレーション）</h2>
+    <canvas id="simCanvas"></canvas>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label><span>シミュレーション速度</span> <span id="speed-val">1.0x</span></label>
+            <input type="range" id="speed-slider" min="0.1" max="2.0" step="0.1" value="1.0">
+        </div>
+        <div class="control-group">
+            <label><span>分離 (Separation: 離れる)</span> <span id="sep-val">0.05</span></label>
+            <input type="range" id="sep-slider" min="0.0" max="0.1" step="0.005" value="0.05">
+        </div>
+        <div class="control-group">
+            <label><span>整列 (Alignment: 合わせる)</span> <span id="ali-val">0.05</span></label>
+            <input type="range" id="ali-slider" min="0.0" max="0.1" step="0.005" value="0.05">
+        </div>
+        <div class="control-group">
+            <label><span>結合 (Cohesion: 集まる)</span> <span id="coh-val">0.005</span></label>
+            <input type="range" id="coh-slider" min="0.0" max="0.02" step="0.001" value="0.005">
+        </div>
+        <button id="resetBtn">鳥をランダムに再配置</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        const width = 400;
+        const height = 400;
+        canvas.width = width;
+        canvas.height = height;
+
+        // パラメータ
+        let speedMultiplier = 1.0; // 追加: 速度の倍率
+        let separationForce = 0.05;
+        let alignmentForce = 0.05;
+        let cohesionForce = 0.005;
+        
+        const visualRange = 40;
+        const minDistance = 20;
+        const speedLimit = 4;
+
+        let boids = [];
+        const numBoids = 120;
+
+        function initBoids() {
+            boids = [];
+            for (let i = 0; i < numBoids; i++) {
+                boids.push({
+                    x: Math.random() * width,
+                    y: Math.random() * height,
+                    vx: (Math.random() - 0.5) * 4,
+                    vy: (Math.random() - 0.5) * 4,
+                });
+            }
+        }
+
+        function distSq(boid1, boid2) {
+            return (boid1.x - boid2.x) ** 2 + (boid1.y - boid2.y) ** 2;
+        }
+
+        function updateBoids() {
+            for (let boid of boids) {
+                let centerX = 0, centerY = 0;
+                let avgVx = 0, avgVy = 0;
+                let moveX = 0, moveY = 0;
+                let numNeighbors = 0;
+
+                for (let other of boids) {
+                    if (boid === other) continue;
+
+                    const dSq = distSq(boid, other);
+                    
+                    if (dSq < visualRange ** 2) {
+                        centerX += other.x;
+                        centerY += other.y;
+                        avgVx += other.vx;
+                        avgVy += other.vy;
+                        numNeighbors++;
+                    }
+
+                    if (dSq < minDistance ** 2) {
+                        moveX += boid.x - other.x;
+                        moveY += boid.y - other.y;
+                    }
+                }
+
+                if (numNeighbors > 0) {
+                    centerX = centerX / numNeighbors;
+                    centerY = centerY / numNeighbors;
+                    boid.vx += (centerX - boid.x) * cohesionForce;
+                    boid.vy += (centerY - boid.y) * cohesionForce;
+
+                    avgVx = avgVx / numNeighbors;
+                    avgVy = avgVy / numNeighbors;
+                    boid.vx += (avgVx - boid.vx) * alignmentForce;
+                    boid.vy += (avgVy - boid.vy) * alignmentForce;
+                }
+
+                boid.vx += moveX * separationForce;
+                boid.vy += moveY * separationForce;
+
+                const speed = Math.sqrt(boid.vx ** 2 + boid.vy ** 2);
+                if (speed > speedLimit) {
+                    boid.vx = (boid.vx / speed) * speedLimit;
+                    boid.vy = (boid.vy / speed) * speedLimit;
+                }
+
+                // ここで速度倍率（speedMultiplier）を掛け合わせて移動量を調整
+                boid.x += boid.vx * speedMultiplier;
+                boid.y += boid.vy * speedMultiplier;
+
+                if (boid.x < 0) boid.x = width;
+                if (boid.x > width) boid.x = 0;
+                if (boid.y < 0) boid.y = height;
+                if (boid.y > height) boid.y = 0;
+            }
+        }
+
+        function drawBoids() {
+            ctx.fillStyle = 'rgba(26, 42, 58, 0.4)';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.fillStyle = '#00e5ff';
+
+            for (let boid of boids) {
+                const angle = Math.atan2(boid.vy, boid.vx);
+                
+                ctx.save();
+                ctx.translate(boid.x, boid.y);
+                ctx.rotate(angle);
+                
+                ctx.beginPath();
+                ctx.moveTo(8, 0);
+                ctx.lineTo(-4, 4);
+                ctx.lineTo(-2, 0);
+                ctx.lineTo(-4, -4);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+
+        function loop() {
+            updateBoids();
+            drawBoids();
+            requestAnimationFrame(loop);
+        }
+
+        // --- 追加したスライダーのイベントリスナー ---
+        document.getElementById('speed-slider').addEventListener('input', (e) => {
+            speedMultiplier = parseFloat(e.target.value);
+            document.getElementById('speed-val').innerText = speedMultiplier.toFixed(1) + 'x';
+        });
+
+        // 既存のスライダー
+        document.getElementById('sep-slider').addEventListener('input', (e) => {
+            separationForce = parseFloat(e.target.value);
+            document.getElementById('sep-val').innerText = separationForce.toFixed(3);
+        });
+        document.getElementById('ali-slider').addEventListener('input', (e) => {
+            alignmentForce = parseFloat(e.target.value);
+            document.getElementById('ali-val').innerText = alignmentForce.toFixed(3);
+        });
+        document.getElementById('coh-slider').addEventListener('input', (e) => {
+            cohesionForce = parseFloat(e.target.value);
+            document.getElementById('coh-val').innerText = cohesionForce.toFixed(3);
+        });
+        
+        document.getElementById('resetBtn').addEventListener('click', initBoids);
+
+        initBoids();
+        loop();
+    </script>
+</body>
+</html>

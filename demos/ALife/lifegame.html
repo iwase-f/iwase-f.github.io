@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ライフゲーム (Game of Life)</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: #eeeeee;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            text-align: center;
+        }
+        canvas {
+            background-color: #000000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            width: 100%;
+            max-width: 350px;
+            aspect-ratio: 1 / 1;
+            image-rendering: pixelated; /* セルをくっきり見せる */
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        .controls {
+            width: 100%;
+            max-width: 350px;
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 8px;
+            box-sizing: border-box;
+        }
+        .control-group {
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+        }
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 15px;
+            border-radius: 5px;
+            background: #444;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            font-size: 1rem;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        #playBtn { background-color: #4CAF50; }
+        #playBtn:active { background-color: #45a049; }
+        #playBtn.playing { background-color: #f44336; }
+        #randomBtn { background-color: #2196F3; }
+        #randomBtn:active { background-color: #1e88e5; }
+        #clearBtn { background-color: #757575; }
+        #clearBtn:active { background-color: #616161; }
+    </style>
+</head>
+<body>
+
+    <h2>ライフゲーム (Game of Life)</h2>
+    <canvas id="simCanvas"></canvas>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label><span>シミュレーション速度</span> <span id="speed-val">標準</span></label>
+            <input type="range" id="speed-slider" min="1" max="60" step="1" value="15">
+        </div>
+        
+        <div class="button-group">
+            <button id="playBtn">再生</button>
+            <button id="randomBtn">ランダム配置</button>
+        </div>
+        <div class="button-group">
+            <button id="clearBtn">すべてクリア</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // グリッドの解像度（スマホでも見やすい粗さに設定）
+        const cols = 100;
+        const rows = 100;
+        canvas.width = cols;
+        canvas.height = rows;
+
+        // セルの状態を保持する配列 (0: 死, 1: 生)
+        let grid = new Uint8Array(cols * rows);
+        let nextGrid = new Uint8Array(cols * rows);
+        const imageData = ctx.createImageData(cols, rows);
+
+        // 状態管理変数
+        let isPlaying = false;
+        let fps = 15;
+        let lastFrameTime = 0;
+        let animationId;
+
+        // ランダムにセルを配置する初期化関数
+        function randomize() {
+            for (let i = 0; i < cols * rows; i++) {
+                grid[i] = Math.random() > 0.85 ? 1 : 0; // 15%の確率でセルを配置
+            }
+            draw();
+        }
+
+        // グリッドを真っさらにする関数
+        function clearGrid() {
+            grid.fill(0);
+            draw();
+            if (isPlaying) togglePlay();
+        }
+
+        // 座標(x, y)の周囲8マスの生きたセルを数える（画面端はループする設定）
+        function countNeighbors(x, y) {
+            let sum = 0;
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    const col = (x + i + cols) % cols;
+                    const row = (y + j + rows) % rows;
+                    sum += grid[row * cols + col];
+                }
+            }
+            sum -= grid[y * cols + x]; // 自分自身の状態を引く
+            return sum;
+        }
+
+        // ライフゲームのルールを適用して次世代を計算
+        function update() {
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    const state = grid[y * cols + x];
+                    const neighbors = countNeighbors(x, y);
+                    const idx = y * cols + x;
+
+                    if (state === 0 && neighbors === 3) {
+                        nextGrid[idx] = 1; // 誕生
+                    } else if (state === 1 && (neighbors < 2 || neighbors > 3)) {
+                        nextGrid[idx] = 0; // 過疎・過密で死亡
+                    } else {
+                        nextGrid[idx] = state; // 生存
+                    }
+                }
+            }
+            // 配列を入れ替える
+            let temp = grid;
+            grid = nextGrid;
+            nextGrid = temp;
+        }
+
+        // キャンバスに描画
+        function draw() {
+            const data = imageData.data;
+            for (let i = 0; i < cols * rows; i++) {
+                const pixelIdx = i * 4;
+                const state = grid[i];
+                
+                // 生きているセルは明るい緑、死んでいるセルは黒
+                const color = state === 1 ? 255 : 0;
+                
+                data[pixelIdx]     = state === 1 ? 76 : 0;  // R
+                data[pixelIdx + 1] = state === 1 ? 175 : 0; // G
+                data[pixelIdx + 2] = state === 1 ? 80 : 0;  // B
+                data[pixelIdx + 3] = 255;                   // Alpha
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        // メインループ（フレームレート制御付き）
+        function loop(timestamp) {
+            if (!isPlaying) return;
+
+            // スライダーで設定した速度（FPS）に合わせて更新間隔を制御
+            const elapsed = timestamp - lastFrameTime;
+            if (elapsed > 1000 / fps) {
+                update();
+                draw();
+                lastFrameTime = timestamp;
+            }
+            animationId = requestAnimationFrame(loop);
+        }
+
+        // 再生・停止の切り替え
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            const playBtn = document.getElementById('playBtn');
+            if (isPlaying) {
+                playBtn.innerText = "停止";
+                playBtn.classList.add("playing");
+                lastFrameTime = performance.now();
+                loop(performance.now());
+            } else {
+                playBtn.innerText = "再生";
+                playBtn.classList.remove("playing");
+                cancelAnimationFrame(animationId);
+            }
+        }
+
+        // --- イベントリスナー ---
+
+        document.getElementById('playBtn').addEventListener('click', togglePlay);
+        document.getElementById('randomBtn').addEventListener('click', randomize);
+        document.getElementById('clearBtn').addEventListener('click', clearGrid);
+
+        const speedSlider = document.getElementById('speed-slider');
+        const speedVal = document.getElementById('speed-val');
+        speedSlider.addEventListener('input', (e) => {
+            fps = parseInt(e.target.value);
+            if (fps < 20) speedVal.innerText = "遅い";
+            else if (fps < 40) speedVal.innerText = "標準";
+            else speedVal.innerText = "速い";
+        });
+
+        // キャンバスをタップ/クリックして手動でセルを配置・消去する機能
+        canvas.addEventListener('pointerdown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            // 描画領域のスケールに合わせてクリック座標を計算
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = Math.floor((e.clientX - rect.left) * scaleX);
+            const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+            if (x >= 0 && x < cols && y >= 0 && y < rows) {
+                const idx = y * cols + x;
+                grid[idx] = grid[idx] === 1 ? 0 : 1; // 状態を反転
+                draw();
+            }
+        });
+
+        // 初期化実行
+        randomize();
+    </script>
+</body>
+</html>

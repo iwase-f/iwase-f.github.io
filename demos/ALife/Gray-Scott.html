@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>熱帯魚の模様（Gray-Scottモデル）</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f0f0; /* 全体の背景を明るいグレイに */
+            color: #333333;
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 {
+            margin-top: 0;
+            font-size: 1.2rem;
+            text-align: center;
+        }
+        canvas {
+            background-color: #ffffff; /* キャンバスの初期背景は白 */
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 350px;
+            aspect-ratio: 1 / 1;
+            /* スムーズなグラデーションを見せるため pixelated を外しています */
+            margin-bottom: 20px;
+        }
+        .controls {
+            width: 100%;
+            max-width: 350px;
+            background: #ffffff;
+            padding: 15px;
+            border-radius: 8px;
+            box-sizing: border-box;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-group label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            margin-bottom: 5px;
+        }
+        input[type="range"] {
+            width: 100%;
+            height: 15px;
+            border-radius: 5px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            background: #555;
+            cursor: pointer;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            font-size: 1rem;
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:active {
+            background-color: #111;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>模様シミュレーター</h2>
+    <canvas id="simCanvas"></canvas>
+    
+    <div class="controls">
+        <div class="control-group">
+            <label><span>供給率 (Feed: f)</span> <span id="f-val">0.026</span></label>
+            <input type="range" id="f-slider" min="0.010" max="0.060" step="0.001" value="0.026">
+        </div>
+        <div class="control-group">
+            <label><span>消滅率 (Kill: k)</span> <span id="k-val">0.053</span></label>
+            <input type="range" id="k-slider" min="0.030" max="0.070" step="0.001" value="0.053">
+        </div>
+        <button id="resetBtn">模様をリセット</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // --- 修正箇所：内部解像度を上げる ---
+        // 128x128 から 256x256 に変更 (面積は4倍)
+        const width = 256;
+        const height = 256;
+        canvas.width = width;
+        canvas.height = height;
+
+        let f = 0.026;
+        let k = 0.053;
+        const Da = 1.0;
+        const Db = 0.5;
+        const dt = 1.0;
+
+        let A = new Float32Array(width * height);
+        let B = new Float32Array(width * height);
+        let nextA = new Float32Array(width * height);
+        let nextB = new Float32Array(width * height);
+        const imageData = ctx.createImageData(width, height);
+
+        function init() {
+            for (let i = 0; i < width * height; i++) {
+                A[i] = 1.0;
+                B[i] = 0.0;
+            }
+            
+            // --- 修正箇所：解像度に合わせて初期配置の範囲を広げる ---
+            const radius = 20; // 10 から 20 に変更
+            const cx = width / 2;
+            const cy = height / 2;
+            for (let y = cy - radius; y < cy + radius; y++) {
+                for (let x = cx - radius; x < cx + radius; x++) {
+                    if (Math.random() > 0.1) {
+                        B[y * width + x] = 1.0;
+                    }
+                }
+            }
+        }
+
+        function laplace(arr, x, y) {
+            let sum = 0;
+            sum += arr[y * width + x] * -1.0;
+            sum += arr[y * width + (x - 1)] * 0.2;
+            sum += arr[y * width + (x + 1)] * 0.2;
+            sum += arr[(y - 1) * width + x] * 0.2;
+            sum += arr[(y + 1) * width + x] * 0.2;
+            sum += arr[(y - 1) * width + (x - 1)] * 0.05;
+            sum += arr[(y - 1) * width + (x + 1)] * 0.05;
+            sum += arr[(y + 1) * width + (x - 1)] * 0.05;
+            sum += arr[(y + 1) * width + (x + 1)] * 0.05;
+            return sum;
+        }
+
+        function update() {
+            // --- 調整箇所：計算ステップ数を調整 ---
+            // 解像度が上がった分計算が増えたため、FPSを保つためにステップ数を減らす (8 -> 2)
+            for (let step = 0; step < 2; step++) {
+                for (let y = 1; y < height - 1; y++) {
+                    for (let x = 1; x < width - 1; x++) {
+                        const idx = y * width + x;
+                        const a = A[idx];
+                        const b = B[idx];
+                        
+                        const lapA = laplace(A, x, y);
+                        const lapB = laplace(B, x, y);
+                        
+                        const reaction = a * b * b;
+                        
+                        nextA[idx] = a + (Da * lapA - reaction + f * (1 - a)) * dt;
+                        nextB[idx] = b + (Db * lapB + reaction - (k + f) * b) * dt;
+                        
+                        nextA[idx] = Math.max(0, Math.min(1, nextA[idx]));
+                        nextB[idx] = Math.max(0, Math.min(1, nextB[idx]));
+                    }
+                }
+                let tempA = A; A = nextA; nextA = tempA;
+                let tempB = B; B = nextB; nextB = tempB;
+            }
+        }
+
+        // --- 修正箇所：モノトーン（白背景にグレイ・黒）への変更 ---
+        function draw() {
+            const data = imageData.data;
+            for (let i = 0; i < width * height; i++) {
+                const b = B[i];
+                
+                // 濃度を 0.0 ~ 1.0 の範囲にスケーリング
+                let val = b * 2.5;
+                val = Math.max(0, Math.min(1, val));
+                
+                // Smoothstepでコントラストを調整
+                val = val * val * (3 - 2 * val);
+
+                // 輝度の計算 (0=黒, 1=白)
+                // 物質Bが高い(val=1)ときに黒、低い(val=0)ときに白にする
+                const shade = 255 * (1 - val); 
+                
+                const pixelIdx = i * 4;
+                data[pixelIdx]     = shade; // Red
+                data[pixelIdx + 1] = shade; // Green
+                data[pixelIdx + 2] = shade; // Blue
+                data[pixelIdx + 3] = 255;   // Alpha
+            }
+            ctx.putImageData(imageData, 0, 0);
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        document.getElementById('f-slider').addEventListener('input', (e) => {
+            f = parseFloat(e.target.value);
+            document.getElementById('f-val').innerText = f.toFixed(3);
+        });
+
+        document.getElementById('k-slider').addEventListener('input', (e) => {
+            k = parseFloat(e.target.value);
+            document.getElementById('k-val').innerText = k.toFixed(3);
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', init);
+
+        init();
+        loop();
+    </script>
+</body>
+</html>
