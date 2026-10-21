@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>パラパラ漫画デモ</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #222; /* 映像が映えるように背景は暗く */
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        .controls {
+            background: #333;
+            padding: 20px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+        }
+        .file-input-area {
+            margin-bottom: 15px;
+            padding: 15px;
+            border: 2px dashed #666;
+            border-radius: 8px;
+            background: #2a2a2a;
+        }
+        input[type="file"] {
+            font-size: 1.1em;
+            cursor: pointer;
+        }
+        .slider-group {
+            margin: 15px 0;
+        }
+        input[type="range"] {
+            width: 80%;
+            max-width: 400px;
+            cursor: pointer;
+        }
+        .fps-display {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #00ffcc;
+            margin-left: 15px;
+        }
+        button {
+            background-color: #ff0066;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button.playing {
+            background-color: #666;
+        }
+        button:hover:not(:disabled) {
+            background-color: #cc0052;
+        }
+        button:disabled {
+            background-color: #555;
+            color: #888;
+            cursor: not-allowed;
+        }
+        #viewerArea {
+            width: 90%;
+            max-width: 800px;
+            height: 500px;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 2px solid #444;
+        }
+        #animationFrame {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: none; /* 画像が読み込まれるまで隠す */
+        }
+        .instruction {
+            color: #aaa;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <h2>パラパラ漫画</h2>
+        
+        <div class="file-input-area">
+            <p style="margin-top:0;">用意した3つの画像（コマ）をまとめて選択してください。ファイル名は連番にしてください。</p>
+            <input type="file" id="imageInput" multiple accept="image/*">
+            <div class="instruction">※Ctrlキー（MacはCommandキー）を押しながらクリックするか、ドラッグで複数選択できます。</div>
+        </div>
+
+        <div class="slider-group">
+            <label style="font-size: 1.2em;">再生スピード（コマ数/秒）:</label>
+            <input type="range" id="fpsSlider" min="1" max="30" value="3">
+            <span class="fps-display" id="fpsVal">3 FPS</span>
+        </div>
+
+        <button id="playBtn" disabled>画像を読み込んでください</button>
+    </div>
+
+    <div id="viewerArea">
+        <span id="placeholderText">ここに画像が表示されます</span>
+        <img id="animationFrame" src="" alt="Animation Frame">
+    </div>
+
+    <script>
+        window.onload = function() {
+            const imageInput = document.getElementById('imageInput');
+            const fpsSlider = document.getElementById('fpsSlider');
+            const fpsVal = document.getElementById('fpsVal');
+            const playBtn = document.getElementById('playBtn');
+            const animationFrame = document.getElementById('animationFrame');
+            const placeholderText = document.getElementById('placeholderText');
+
+            let imageUrls = [];
+            let currentFrameIndex = 0;
+            let isPlaying = false;
+            let animationId;
+            let lastDrawTime = 0;
+
+            // 1. 画像ファイルの読み込み
+            imageInput.addEventListener('change', function(e) {
+                const files = e.target.files;
+                if (files.length === 0) return;
+
+                // 以前のURLメモリを解放
+                imageUrls.forEach(url => URL.revokeObjectURL(url));
+                imageUrls = [];
+
+                // 選択されたファイルをURLに変換して配列に保存（ファイル名のアルファベット順にソート）
+                const sortedFiles = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
+                sortedFiles.forEach(file => {
+                    imageUrls.push(URL.createObjectURL(file));
+                });
+
+                // 初期状態のセット
+                currentFrameIndex = 0;
+                animationFrame.src = imageUrls[0];
+                animationFrame.style.display = 'block';
+                placeholderText.style.display = 'none';
+
+                // ボタンを有効化
+                playBtn.disabled = false;
+                playBtn.textContent = '▶ 再生を開始';
+                
+                // もし再生中なら一度止める
+                if (isPlaying) togglePlay();
+            });
+
+            // 2. スライダーの表示更新
+            fpsSlider.addEventListener('input', function(e) {
+                fpsVal.textContent = e.target.value + ' FPS';
+            });
+
+            // 3. 描画ループ処理
+            function renderLoop(timestamp) {
+                if (!isPlaying) return;
+
+                const fps = parseInt(fpsSlider.value, 10);
+                const frameInterval = 1000 / fps; // 次のコマまでのミリ秒
+
+                if (timestamp - lastDrawTime >= frameInterval) {
+                    // 次のコマへ進める（最後まで行ったら0に戻る）
+                    currentFrameIndex = (currentFrameIndex + 1) % imageUrls.length;
+                    animationFrame.src = imageUrls[currentFrameIndex];
+                    
+                    lastDrawTime = timestamp;
+                }
+
+                animationId = requestAnimationFrame(renderLoop);
+            }
+
+            // 4. 再生/停止の切り替え
+            function togglePlay() {
+                if (imageUrls.length === 0) return;
+
+                isPlaying = !isPlaying;
+                
+                if (isPlaying) {
+                    playBtn.textContent = '■ 停止';
+                    playBtn.classList.add('playing');
+                    lastDrawTime = performance.now();
+                    animationId = requestAnimationFrame(renderLoop);
+                } else {
+                    playBtn.textContent = '▶ 再生を開始';
+                    playBtn.classList.remove('playing');
+                    cancelAnimationFrame(animationId);
+                }
+            }
+
+            playBtn.addEventListener('click', togglePlay);
+        };
+    </script>
+</body>
+</html>
